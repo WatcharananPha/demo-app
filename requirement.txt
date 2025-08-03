@@ -1,0 +1,14 @@
+gspread
+python-dotenv
+oauth2client
+Pillow
+google-auth
+google-auth-oauthlib
+ujson
+requests
+fastapi
+python-multipart
+pydantic
+uvicorn[standard]
+gunicorn
+google-generativeai
