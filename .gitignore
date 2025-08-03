@@ -1,3 +1,5 @@
 *.json
 .env
 glassy-keyword-466817-t8-8bdc0c7acadc.json
+
+/.streamlit/
