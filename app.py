@@ -16,7 +16,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive.file",
 ]
 
-CREDS_FILE = st.secrets.get("CREDS_JSON_ENV")
+creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=SCOPES)
 DEFAULT_SHEET_ID = "17tMHStXQYXaIQHQIA4jdUyHaYt_tuoNCEEuJCstWEuw"
 
 COMPANY_NAME_ROW = 1
