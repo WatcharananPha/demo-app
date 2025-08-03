@@ -16,7 +16,6 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive.file",
 ]
 
-creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=SCOPES)
 DEFAULT_SHEET_ID = "17tMHStXQYXaIQHQIA4jdUyHaYt_tuoNCEEuJCstWEuw"
 
 COMPANY_NAME_ROW = 1
@@ -237,7 +236,7 @@ def match_products_with_gemini(target_products, reference_products):
     return match_data
 
 def authenticate_and_open_sheet(sheet_id):
-    creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
+    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=SCOPES)
     client = gspread.authorize(creds)
     return client.open_by_key(sheet_id).get_worksheet(0)
 
