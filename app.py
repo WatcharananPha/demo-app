@@ -11,7 +11,7 @@ from openpyxl.utils import get_column_letter
 from dotenv import load_dotenv
 
 load_dotenv()
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+genai.configure(api_key=st.secrets.get("GOOGLE_API_KEY"))
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -235,18 +235,21 @@ def match_products_with_gemini(target_products, reference_products):
     return match_data
 
 def authenticate_and_open_sheet(sheet_id):
-    creds_json = os.getenv("CREDS_JSON_ENV")
-    if not creds_json:
-        st.error("Google Sheets credentials not found. Check environment variable CREDS_JSON_ENV.")
-        return None
-        
     try:
-        creds_dict = json.loads(creds_json)
-        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        # Check if the secrets are available in the Streamlit secrets
+        if "gcp_service_account" not in st.secrets:
+            st.error("Google Sheets credentials not found in .streamlit/secrets.toml")
+            return None
+            
+        # Use the GCP service account credentials from secrets
+        creds = Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"],
+            scopes=SCOPES
+        )
         client = gspread.authorize(creds)
         return client.open_by_key(sheet_id).get_worksheet(0)
-    except Exception:
-        st.error("Failed to authenticate with Google Sheets. Check your credentials.")
+    except Exception as e:
+        st.error(f"Failed to authenticate with Google Sheets: {str(e)}")
         return None
 
 def ensure_first_three_rows_exist(ws):
@@ -703,456 +706,307 @@ def process_pdfs(pdf_paths, sheet_id=DEFAULT_SHEET_ID):
     return process_files(pdf_paths, sheet_id)
 
 prompt = """# System Message for Product List Extraction (PDF/Text Table Processing)
+## CRITICAL: ANTI-HALLUCINATION WARNING
+You MUST ONLY extract information that is EXPLICITLY visible in the document. 
+- DO NOT add data from anywhere other than the one in the uploaded document. Adding data that is not from the document is a serious mistake.
+- DO NOT create or invent any products, prices, or specifications
+- DO NOT add data from the attached Example in the prompt.
+- DO NOT add products that are not clearly listed as distinct line items
+- DO NOT attempt to break down a single product into multiple products
+- DO NOT interpret descriptive text as separate products
+- If uncertain about any information, LEAVE IT OUT rather than guessing
 
-CRITICAL: ANTI-HALLUCINATION WARNING
-
-You MUST ONLY extract information that is EXPLICITLY visible in the document.
-
-DO NOT add data from anywhere other than the one in the uploaded document. Adding data that is not from the document is a serious mistake.
-
-DO NOT create or invent any products, prices, or specifications
-
-DO NOT add data from the attached Example in the prompt.
-
-DO NOT add products that are not clearly listed as distinct line items
-
-DO NOT attempt to break down a single product into multiple products
-
-DO NOT interpret descriptive text as separate products
-
-If uncertain about any information, LEAVE IT OUT rather than guessing
-
-CRITICAL: CONTACT INFORMATION EXTRACTION
-
+## CRITICAL: CONTACT INFORMATION EXTRACTION
 Pay special attention to contact information in the document header or footer:
+- Extract any email addresses (example@domain.com)
+- Extract any phone numbers (formats like 02-3384825, 081-1234567, 095-525-2623)
+- Put email and phone details in the "contact" field
+- Format: "Email: email@example.com, Phone: 081-234-5678"
+- Use only the phone number and email address on the letterhead. Do not add "บริษัท ลูก้า แอสเซท จำกัด, 081-781-7283" contact information
 
-Extract any email addresses (example@domain.com)
-
-Extract any phone numbers (formats like 02-3384825, 081-1234567, 095-525-2623)
-
-Put email and phone details in the "contact" field
-
-Format: "Email: email@example.com, Phone: 081-234-5678"
-
-Use only the phone number and email address on the letterhead. Do not add "บริษัท ลูก้า แอสเซท จำกัด, 081-781-7283" contact information
-
-CRITICAL: COMPLETE EXTRACTION REQUIREMENT
-
+## CRITICAL: COMPLETE EXTRACTION REQUIREMENT
 You MUST extract ALL products visible in the document:
+- Extract EVERY product line item visible in the document
+- Preserve hierarchical structure (groups/categories) of products if present
+- Ensure NO products are missed or skipped
+- Each row with a distinct price is one product
 
-Extract EVERY product line item visible in the document
-
-Preserve hierarchical structure (groups/categories) of products if present
-
-Ensure NO products are missed or skipped
-
-Each row with a distinct price is one product
-
-Input Format
-
+## Input Format
 Provide PDF files (or images/tables with text extraction) containing product information (receipts, invoices, product lists, etc.).
 
-Task
-
+## Task
 Extract ALL product information EXPLICITLY visible in the document:
+- Extract products with quantities, units, and prices
+- Preserve parent-child relationships (main categories and sub-items)
+- Maintain hierarchical product groupings (numbered sections, categories)
+- Also extract additional quotation details like price validity, delivery time, payment terms, etc.
 
-Extract products with quantities, units, and prices
-
-Preserve parent-child relationships (main categories and sub-items)
-
-Maintain hierarchical product groupings (numbered sections, categories)
-
-Also extract additional quotation details like price validity, delivery time, payment terms, etc.
-
-Hierarchical Structure Handling
-
+## Hierarchical Structure Handling
 Many quotations organize products hierarchically. When you see this:
+- Include category names in product descriptions (e.g., "งานบันไดกระจก งานพื้นตก - กระจกเทมเปอร์ใส หนา 10 มม. ขนาด 4.672×0.97 ม.")
+- If product descriptions begin with numbers (1, 2, 3...), REMOVE those numbers
+- Include all parent category information in each product's name without the leading numbers
 
-Include category names in product descriptions (e.g., "งานบันไดกระจก งานพื้นตก - กระจกเทมเปอร์ใส หนา 10 มม. ขนาด 4.672×0.97 ม.")
-
-If product descriptions begin with numbers (1, 2, 3...), REMOVE those numbers
-
-Include all parent category information in each product's name without the leading numbers
-
-Output Format (JSON only)
-
+## Output Format (JSON only)
 You must return ONLY this JSON structure:
 {
-"company": "company name or first name + last name (NEVER null)",
-"vat": true,
-"name": "customer name or null",
-"contact": "phone number or email or null",
-"priceGuaranteeDay": 30
-"deliveryTime": "",
-"paymentTerms": "",
-"otherNotes": "",
-"products": [
-{
-"name": "full product description including ALL parent category info, specifications AND dimensions WITHOUT leading numbers",
-"quantity": 1,
-"unit": "match the unit shown in the document (e.g., แผ่น, ตร.ม., ชิ้น, ตัว, เมตร, ชุด)",
-"pricePerUnit": 0,
-"totalPrice": 0
+  "company": "company name or first name + last name (NEVER null)",
+  "vat": true,
+  "name": "customer name or null",
+  "contact": "phone number or email or null",
+  "priceGuaranteeDay": 30
+  "deliveryTime": "",
+  "paymentTerms": "",
+  "otherNotes": "",
+  "products": [
+    {
+      "name": "full product description including ALL parent category info, specifications AND dimensions WITHOUT leading numbers",
+      "quantity": 1,
+      "unit": "match the unit shown in the document (e.g., แผ่น, ตร.ม., ชิ้น, ตัว, เมตร, ชุด)",
+      "pricePerUnit": 0,
+      "totalPrice": 0
+    }
+  ],
+  "totalPrice": 0,
+  "totalVat": 0,
+  "totalPriceIncludeVat": 0
 }
-],
-"totalPrice": 0,
-"totalVat": 0,
-"totalPriceIncludeVat": 0
-}
 
-Example 1 (Format with Item/ART.No./Description/Qty/Unit/Price columns):
-Item	ART.No.	Description	Qty	Unit	Standard Price	Discount Price	Amount
-1	CPW-xxxx	SPC ลายไม้ 4.5 มิล (ก้างปลา)	1.00	ตร.ม.		520.00	520.000
-2		ค่าแรงติดตั้ง	1.00	ตร.ม.		150.00	150.000
-Example 2 (Format with ลำดับ/รหัสสินค้า/รายละเอียดสินค้า columns):
-ลำดับ	รหัสสินค้า	รายละเอียดสินค้า	หน่วย	จำนวน	ราคา/หน่วย(บาท)	จำนวนเงิน(บาท)
-1		พื้นไม้ไวนิลลายไม้ปลา 4.5 มม. LKT 4.5 mm x 0.3 mm สีฟ้าเซอร์คูลี (1 กล่อง บรรจุ 18 แผ่น หรือ 1.3 ตร.ม)	ตร.ม.	1.30	680.00	884.00
-Field Extraction Guidelines
-name (Product Description)
+## Example 1 (Format with Item/ART.No./Description/Qty/Unit/Price columns):
+| Item | ART.No. | Description | Qty | Unit | Standard Price | Discount Price | Amount |
+|------|---------|-------------|-----|------|----------------|---------------|--------|
+| 1    | CPW-xxxx| SPC ลายไม้ 4.5 มิล (ก้างปลา) | 1.00 | ตร.ม. |  | 520.00 | 520.000 |
+| 2    |         | ค่าแรงติดตั้ง | 1.00 | ตร.ม. |  | 150.00 | 150.000 |
 
-CRITICAL: Include ALL hierarchical information in each product name:
+## Example 2 (Format with ลำดับ/รหัสสินค้า/รายละเอียดสินค้า columns):
+| ลำดับ | รหัสสินค้า | รายละเอียดสินค้า | หน่วย | จำนวน | ราคา/หน่วย(บาท) | จำนวนเงิน(บาท) |
+|------|---------|----------------|------|------|--------------|------------|
+| 1    |         | พื้นไม้ไวนิลลายไม้ปลา 4.5 มม. LKT 4.5 mm x 0.3 mm สีฟ้าเซอร์คูลี (1 กล่อง บรรจุ 18 แผ่น หรือ 1.3 ตร.ม) | ตร.ม. | 1.30 | 680.00 | 884.00 |
 
-Category names/headings (e.g., "งานบันไดกระจก งานพื้นตก")
+## Field Extraction Guidelines
 
-Sub-category information (e.g., "เหล็กตัวซีชุบสังกะสี")
+### name (Product Description)
+* CRITICAL: Include ALL hierarchical information in each product name:
+  - Category names/headings (e.g., "งานบันไดกระจก งานพื้นตก")
+  - Sub-category information (e.g., "เหล็กตัวซีชุบสังกะสี")
+  - Glass type, thickness (e.g., "กระจกเทมเปอร์ใส หนา 10 มม.")
+  - Exact dimensions (e.g., "ขนาด 4.672×0.97 ม.")
+* REMOVE any leading numbers (1., 2., 3.) from the product descriptions
+* Format hierarchical products as: "[Category Name] - [Material] - [Type] - [Dimensions]"
+* Include: ALL distinguishing characteristics that make each product unique
+* Example: "งานบันไดกระจก งานพื้นตก - เหล็กตัวซีชุบสังกะสี ไม่รวมปูน - กระจกเทมเปอร์ใส หนา 10 มม. ขนาด 4.672×0.97 ม."
 
-Glass type, thickness (e.g., "กระจกเทมเปอร์ใส หนา 10 มม.")
+### unit and quantity (DIRECT EXTRACTION RULE)
+* Extract unit and quantity DIRECTLY from each line item as shown
+* Use the exact unit shown in the document (ชุด, แผ่น, ตร.ม., ชิ้น, ตัว, เมตร, etc.)
+* Extract the exact quantity shown for each product (never assume or calculate)
+* NEVER create quantities or units that aren't explicitly shown in the document
+* Pay special attention to decimal quantities - extract the full decimal precision
 
-Exact dimensions (e.g., "ขนาด 4.672×0.97 ม.")
+### pricePerUnit and totalPrice
+* Extract ONLY prices clearly visible in the document
+* Use numeric values only (no currency symbols)
+* Extract cleanly from pricing fields as shown in each line item
+* NEVER calculate or estimate prices that aren't explicitly shown
+* NEVER combine different products' prices
+* Pay special attention to decimal prices - extract the EXACT decimal values shown
 
-REMOVE any leading numbers (1., 2., 3.) from the product descriptions
+### Additional Quotation Details
+* Extract these additional fields if present:
+  - "กำหนดยืนราคา (วัน)", "กำหนดยืนราคา", "การยืนราคา" - Price validity period in days (priceGuaranteeDay)
+  - "ระยะเวลาส่งมอบสินค้าหลังจากได้รับ PO" - Delivery time after PO (deliveryTime)
+  - "การชำระเงิน" - Payment terms (paymentTerms)
+  - "อื่น ๆ" - Other notes (otherNotes)
+* Extract as text exactly as written, preserving numbers and Thai language
 
-Format hierarchical products as: "[Category Name] - [Material] - [Type] - [Dimensions]"
+### CRITICAL: Pricing summaries and summary values
+* Extract the exact values for these three summary items:
+  - "รวมเป็นเงิน" - the initial subtotal (totalPrice)
+  - "ภาษีมูลค่าเพิ่ม 7%" - the VAT amount (totalVat)
+  - "ยอดรวมทั้งสิ้น" - the final total (totalPriceIncludeVat)
+* Alternative labels to match:
+  - For totalPrice: "รวม", "รวมเป็นเงิน", "ราคารวม", "Total", "TOTAL AMOUNT", "รวมราคา"
+  - For totalVat: "ภาษีมูลค่าเพิ่ม 7%", "VAT 7%"
+  - For totalPriceIncludeVat: "ยอดรวมทั้งสิ้น", "รวมทั้งหมด", "รวมเงินทั้งสิน", "ราคารวมสุทธิ", "รวมราคางานทั้งหมดตามสัญญา"
+* Extract the exact values as shown (remove commas, currency symbols)
+* CRITICAL: Preserve full decimal precision in all monetary values
 
-Include: ALL distinguishing characteristics that make each product unique
-
-Example: "งานบันไดกระจก งานพื้นตก - เหล็กตัวซีชุบสังกะสี ไม่รวมปูน - กระจกเทมเปอร์ใส หนา 10 มม. ขนาด 4.672×0.97 ม."
-
-unit and quantity (DIRECT EXTRACTION RULE)
-
-Extract unit and quantity DIRECTLY from each line item as shown
-
-Use the exact unit shown in the document (ชุด, แผ่น, ตร.ม., ชิ้น, ตัว, เมตร, etc.)
-
-Extract the exact quantity shown for each product (never assume or calculate)
-
-NEVER create quantities or units that aren't explicitly shown in the document
-
-Pay special attention to decimal quantities - extract the full decimal precision
-
-pricePerUnit and totalPrice
-
-Extract ONLY prices clearly visible in the document
-
-Use numeric values only (no currency symbols)
-
-Extract cleanly from pricing fields as shown in each line item
-
-NEVER calculate or estimate prices that aren't explicitly shown
-
-NEVER combine different products' prices
-
-Pay special attention to decimal prices - extract the EXACT decimal values shown
-
-Additional Quotation Details
-
-Extract these additional fields if present:
-
-"กำหนดยืนราคา (วัน)", "กำหนดยืนราคา", "การยืนราคา" - Price validity period in days (priceGuaranteeDay)
-
-"ระยะเวลาส่งมอบสินค้าหลังจากได้รับ PO" - Delivery time after PO (deliveryTime)
-
-"การชำระเงิน" - Payment terms (paymentTerms)
-
-"อื่น ๆ" - Other notes (otherNotes)
-
-Extract as text exactly as written, preserving numbers and Thai language
-
-CRITICAL: Pricing summaries and summary values
-
-Extract the exact values for these three summary items:
-
-"รวมเป็นเงิน" - the initial subtotal (totalPrice)
-
-"ภาษีมูลค่าเพิ่ม 7%" - the VAT amount (totalVat)
-
-"ยอดรวมทั้งสิ้น" - the final total (totalPriceIncludeVat)
-
-Alternative labels to match:
-
-For totalPrice: "รวม", "รวมเป็นเงิน", "ราคารวม", "Total", "TOTAL AMOUNT", "รวมราคา"
-
-For totalVat: "ภาษีมูลค่าเพิ่ม 7%", "VAT 7%"
-
-For totalPriceIncludeVat: "ยอดรวมทั้งสิ้น", "รวมทั้งหมด", "รวมเงินทั้งสิน", "ราคารวมสุทธิ", "รวมราคางานทั้งหมดตามสัญญา"
-
-Extract the exact values as shown (remove commas, currency symbols)
-
-CRITICAL: Preserve full decimal precision in all monetary values
-
-FINAL VERIFICATION
-
+## FINAL VERIFICATION
 Review the extracted products one last time and verify:
-
-Count the number of products you've extracted
-
-Verify this matches EXACTLY with the number of product rows visible in the document
-
-Check that ALL products have proper hierarchical information included WITHOUT leading numbers
-
-Ensure NO products are missing - every line item with a price must be extracted
-
-Confirm all dimensions and specifications are preserved correctly
-
-Verify all decimal values (quantities and prices) maintain their full precision
+1. Count the number of products you've extracted
+2. Verify this matches EXACTLY with the number of product rows visible in the document
+3. Check that ALL products have proper hierarchical information included WITHOUT leading numbers
+4. Ensure NO products are missing - every line item with a price must be extracted
+5. Confirm all dimensions and specifications are preserved correctly
+6. Verify all decimal values (quantities and prices) maintain their full precision
 """
 
 image_prompt = """# System Message for Product List Extraction from Images
+## CRITICAL: ANTI-HALLUCINATION WARNING
+You MUST ONLY extract information that is EXPLICITLY visible in the image. 
+- DO NOT create or invent any products, prices, or specifications
+- DO NOT add products that are not clearly listed as distinct line items
+- DO NOT interpret descriptive text as separate products
+- If text is unclear or unreadable, mark it as uncertain rather than guessing
 
-CRITICAL: ANTI-HALLUCINATION WARNING
-
-You MUST ONLY extract information that is EXPLICITLY visible in the image.
-
-DO NOT create or invent any products, prices, or specifications
-
-DO NOT add products that are not clearly listed as distinct line items
-
-DO NOT interpret descriptive text as separate products
-
-If text is unclear or unreadable, mark it as uncertain rather than guessing
-
-CRITICAL: COMPLETE EXTRACTION REQUIREMENT
-
+## CRITICAL: COMPLETE EXTRACTION REQUIREMENT
 You MUST extract ALL products visible in the image:
+- Extract EVERY product line item visible in the image
+- Preserve hierarchical structure (groups/categories) of products if present
+- Ensure NO products are missed or skipped
+- Each row with a distinct price is one product
 
-Extract EVERY product line item visible in the image
-
-Preserve hierarchical structure (groups/categories) of products if present
-
-Ensure NO products are missed or skipped
-
-Each row with a distinct price is one product
-
-Input Format
-
+## Input Format
 I'm providing an image of a document containing product information.
 
-Task
-
+## Task
 Extract ALL product information EXPLICITLY visible in the image:
+- Extract products with quantities, units, and prices
+- Preserve parent-child relationships (main categories and sub-items)
+- Maintain hierarchical product groupings (numbered sections, categories)
+- Also extract additional quotation details like price validity, delivery time, payment terms, etc.
 
-Extract products with quantities, units, and prices
-
-Preserve parent-child relationships (main categories and sub-items)
-
-Maintain hierarchical product groupings (numbered sections, categories)
-
-Also extract additional quotation details like price validity, delivery time, payment terms, etc.
-
-Hierarchical Structure Handling
-
+## Hierarchical Structure Handling
 Many quotations organize products hierarchically. When you see this:
+- Include category names in product descriptions (e.g., "งานบันไดกระจก งานพื้นตก - กระจกเทมเปอร์ใส หนา 10 มม. ขนาด 4.672×0.97 ม.")
+- If product descriptions begin with numbers (1, 2, 3...), REMOVE those numbers
+- Include all parent category information in each product's name without the leading numbers
 
-Include category names in product descriptions (e.g., "งานบันไดกระจก งานพื้นตก - กระจกเทมเปอร์ใส หนา 10 มม. ขนาด 4.672×0.97 ม.")
-
-If product descriptions begin with numbers (1, 2, 3...), REMOVE those numbers
-
-Include all parent category information in each product's name without the leading numbers
-
-Output Format (JSON only)
-
+## Output Format (JSON only)
 You must return ONLY this JSON structure:
 {
-"company": "company name or first name + last name (NEVER null)",
-"vat": true,
-"contact": "phone number or email or null",
-"priceGuaranteeDay": 30
-"deliveryTime": "",
-"paymentTerms": "",
-"otherNotes": "",
-"products": [
-{
-"name": "full product description including ALL parent category info, specifications AND dimensions WITHOUT leading numbers",
-"quantity": 1,
-"unit": "match the unit shown in the document (e.g., แผ่น, ตร.ม., ชิ้น, ตัว, เมตร, ชุด)",
-"pricePerUnit": 0,
-"totalPrice": 0
+  "company": "company name or first name + last name (NEVER null)",
+  "vat": true,
+  "contact": "phone number or email or null",
+  "priceGuaranteeDay": 30
+  "deliveryTime": "",
+  "paymentTerms": "",
+  "otherNotes": "",
+  "products": [
+    {
+      "name": "full product description including ALL parent category info, specifications AND dimensions WITHOUT leading numbers",
+      "quantity": 1,
+      "unit": "match the unit shown in the document (e.g., แผ่น, ตร.ม., ชิ้น, ตัว, เมตร, ชุด)",
+      "pricePerUnit": 0,
+      "totalPrice": 0
+    }
+  ],
+  "totalPrice": 0,
+  "totalVat": 0,
+  "totalPriceIncludeVat": 0
 }
-],
-"totalPrice": 0,
-"totalVat": 0,
-"totalPriceIncludeVat": 0
-}
 
-Example 1 (Format with Item/ART.No./Description/Qty/Unit/Price columns):
-Item	ART.No.	Description	Qty	Unit	Standard Price	Discount Price	Amount
-1	CPW-xxxx	SPC ลายไม้ 4.5 มิล (ก้างปลา)	1.00	ตร.ม.		520.00	520.000
-2		ค่าแรงติดตั้ง	1.00	ตร.ม.		150.00	150.000
-Example 2 (Format with ลำดับ/รหัสสินค้า/รายละเอียดสินค้า columns):
-ลำดับ	รหัสสินค้า	รายละเอียดสินค้า	หน่วย	จำนวน	ราคา/หน่วย(บาท)	จำนวนเงิน(บาท)
-1		พื้นไม้ไวนิลลายไม้ปลา 4.5 มม. LKT 4.5 mm x 0.3 mm สีฟ้าเซอร์คูลี (1 กล่อง บรรจุ 18 แผ่น หรือ 1.3 ตร.ม)	ตร.ม.	1.30	680.00	884.00
-Field Extraction Guidelines
-name (Product Description)
 
-CRITICAL: Include ALL hierarchical information in each product name:
+## Example 1 (Format with Item/ART.No./Description/Qty/Unit/Price columns):
+| Item | ART.No. | Description | Qty | Unit | Standard Price | Discount Price | Amount |
+|------|---------|-------------|-----|------|----------------|---------------|--------|
+| 1    | CPW-xxxx| SPC ลายไม้ 4.5 มิล (ก้างปลา) | 1.00 | ตร.ม. |  | 520.00 | 520.000 |
+| 2    |         | ค่าแรงติดตั้ง | 1.00 | ตร.ม. |  | 150.00 | 150.000 |
 
-Category names/headings (e.g., "งานบันไดกระจก งานพื้นตก")
+## Example 2 (Format with ลำดับ/รหัสสินค้า/รายละเอียดสินค้า columns):
+| ลำดับ | รหัสสินค้า | รายละเอียดสินค้า | หน่วย | จำนวน | ราคา/หน่วย(บาท) | จำนวนเงิน(บาท) |
+|------|---------|----------------|------|------|--------------|------------|
+| 1    |         | พื้นไม้ไวนิลลายไม้ปลา 4.5 มม. LKT 4.5 mm x 0.3 mm สีฟ้าเซอร์คูลี (1 กล่อง บรรจุ 18 แผ่น หรือ 1.3 ตร.ม) | ตร.ม. | 1.30 | 680.00 | 884.00 |
 
-Sub-category information (e.g., "เหล็กตัวซีชุบสังกะสี")
 
-Glass type, thickness (e.g., "กระจกเทมเปอร์ใส หนา 10 มม.")
+## Field Extraction Guidelines
 
-Exact dimensions (e.g., "ขนาด 4.672×0.97 ม.")
+### name (Product Description)
+* CRITICAL: Include ALL hierarchical information in each product name:
+  - Category names/headings (e.g., "งานบันไดกระจก งานพื้นตก")
+  - Sub-category information (e.g., "เหล็กตัวซีชุบสังกะสี")
+  - Glass type, thickness (e.g., "กระจกเทมเปอร์ใส หนา 10 มม.")
+  - Exact dimensions (e.g., "ขนาด 4.672×0.97 ม.")
+* REMOVE any leading numbers (1., 2., 3.) from the product descriptions
+* Format hierarchical products as: "[Category Name] - [Material] - [Type] - [Dimensions]"
+* Include: ALL distinguishing characteristics that make each product unique
+* Example: "งานบันไดกระจก งานพื้นตก - เหล็กตัวซีชุบสังกะสี ไม่รวมปูน - กระจกเทมเปอร์ใส หนา 10 มม. ขนาด 4.672×0.97 ม."
 
-REMOVE any leading numbers (1., 2., 3.) from the product descriptions
+### unit and quantity (DIRECT EXTRACTION RULE)
+* Extract unit and quantity DIRECTLY from each line item as shown
+* Use the exact unit shown in the document (ชุด, แผ่น, ตร.ม., ชิ้น, ตัว, เมตร, จำนวนต่อชุด etc.)
+* Extract the exact quantity shown for each product (never assume or calculate)
+* NEVER create quantities or units that aren't explicitly shown in the document
+* Pay special attention to decimal quantities - extract the full decimal precision
 
-Format hierarchical products as: "[Category Name] - [Material] - [Type] - [Dimensions]"
+### pricePerUnit and totalPrice
+* Extract ONLY prices clearly visible in the document
+* Use numeric values only (no currency symbols)
+* Extract cleanly from pricing fields as shown in each line item
+* NEVER calculate or estimate prices that aren't explicitly shown
+* NEVER combine different products' prices
+* Pay special attention to decimal prices - extract the EXACT decimal values shown
 
-Include: ALL distinguishing characteristics that make each product unique
+### Additional Quotation Details
+* Extract these additional fields if present:
+  - "กำหนดยืนราคา (วัน)", "กำหนดยืนราคา", "การยืนราคา" - Price validity period in days (priceGuaranteeDay)
+  - "ระยะเวลาส่งมอบสินค้าหลังจากได้รับ PO" - Delivery time after PO (deliveryTime)
+  - "การชำระเงิน" - Payment terms (paymentTerms)
+  - "อื่น ๆ" - Other notes (otherNotes)
+* Extract as text exactly as written, preserving numbers and Thai language
 
-Example: "งานบันไดกระจก งานพื้นตก - เหล็กตัวซีชุบสังกะสี ไม่รวมปูน - กระจกเทมเปอร์ใส หนา 10 มม. ขนาด 4.672×0.97 ม."
+### CRITICAL: Pricing summaries and summary values
+* Extract the exact values for these three summary items:
+  - "รวมเป็นเงิน" - the initial subtotal (totalPrice)
+  - "ภาษีมูลค่าเพิ่ม 7%" - the VAT amount (totalVat)
+  - "ยอดรวมทั้งสิ้น" - the final total (totalPriceIncludeVat)
+* Alternative labels to match:
+  - For totalPrice: "รวม", "รวมเป็นเงิน", "ราคารวม", "Total", "TOTAL AMOUNT", "รวมราคา"
+  - For totalVat: "ภาษีมูลค่าเพิ่ม 7%", "VAT 7%"
+  - For totalPriceIncludeVat: "ยอดรวมทั้งสิ้น", "รวมทั้งหมด", "รวมเงินทั้งสิน", "ราคารวมสุทธิ", "รวมราคางานทั้งหมดตามสัญญา"
+* Extract the exact values as shown (remove commas, currency symbols)
+* CRITICAL: Preserve full decimal precision in all monetary values
 
-unit and quantity (DIRECT EXTRACTION RULE)
-
-Extract unit and quantity DIRECTLY from each line item as shown
-
-Use the exact unit shown in the document (ชุด, แผ่น, ตร.ม., ชิ้น, ตัว, เมตร, จำนวนต่อชุด etc.)
-
-Extract the exact quantity shown for each product (never assume or calculate)
-
-NEVER create quantities or units that aren't explicitly shown in the document
-
-Pay special attention to decimal quantities - extract the full decimal precision
-
-pricePerUnit and totalPrice
-
-Extract ONLY prices clearly visible in the document
-
-Use numeric values only (no currency symbols)
-
-Extract cleanly from pricing fields as shown in each line item
-
-NEVER calculate or estimate prices that aren't explicitly shown
-
-NEVER combine different products' prices
-
-Pay special attention to decimal prices - extract the EXACT decimal values shown
-
-Additional Quotation Details
-
-Extract these additional fields if present:
-
-"กำหนดยืนราคา (วัน)", "กำหนดยืนราคา", "การยืนราคา" - Price validity period in days (priceGuaranteeDay)
-
-"ระยะเวลาส่งมอบสินค้าหลังจากได้รับ PO" - Delivery time after PO (deliveryTime)
-
-"การชำระเงิน" - Payment terms (paymentTerms)
-
-"อื่น ๆ" - Other notes (otherNotes)
-
-Extract as text exactly as written, preserving numbers and Thai language
-
-CRITICAL: Pricing summaries and summary values
-
-Extract the exact values for these three summary items:
-
-"รวมเป็นเงิน" - the initial subtotal (totalPrice)
-
-"ภาษีมูลค่าเพิ่ม 7%" - the VAT amount (totalVat)
-
-"ยอดรวมทั้งสิ้น" - the final total (totalPriceIncludeVat)
-
-Alternative labels to match:
-
-For totalPrice: "รวม", "รวมเป็นเงิน", "ราคารวม", "Total", "TOTAL AMOUNT", "รวมราคา"
-
-For totalVat: "ภาษีมูลค่าเพิ่ม 7%", "VAT 7%"
-
-For totalPriceIncludeVat: "ยอดรวมทั้งสิ้น", "รวมทั้งหมด", "รวมเงินทั้งสิน", "ราคารวมสุทธิ", "รวมราคางานทั้งหมดตามสัญญา"
-
-Extract the exact values as shown (remove commas, currency symbols)
-
-CRITICAL: Preserve full decimal precision in all monetary values
-
-FINAL VERIFICATION
-
+## FINAL VERIFICATION
 Review the extracted products one last time and verify:
-
-Count the number of products you've extracted
-
-Verify this matches EXACTLY with the number of product rows visible in the image
-
-Check that ALL products have proper hierarchical information included WITHOUT leading numbers
-
-Ensure NO products are missing - every line item with a price must be extracted
-
-Confirm all dimensions and specifications are preserved correctly
-
-Verify all decimal values (quantities and prices) maintain their full precision
+1. Count the number of products you've extracted
+2. Verify this matches EXACTLY with the number of product rows visible in the image
+3. Check that ALL products have proper hierarchical information included WITHOUT leading numbers
+4. Ensure NO products are missing - every line item with a price must be extracted
+5. Confirm all dimensions and specifications are preserved correctly
+6. Verify all decimal values (quantities and prices) maintain their full precision
 """
 
 validation_prompt = """
 You are a data validation expert specializing in Thai construction quotations.
 I've extracted product data from a document, but there may be missing products or hierarchical relationships.
 
-CRITICAL: COMPLETE DATA CHECK
-
+## CRITICAL: COMPLETE DATA CHECK
 Your primary task is to ensure ALL products are correctly extracted with their hierarchical structure:
+1. Check that all products visible in the document have been extracted
+2. Ensure parent-child relationships and category groupings are preserved
+3. Verify that all products have complete descriptions including their category name
+4. Make sure no products are missing dimensions or specifications
 
-Check that all products visible in the document have been extracted
-
-Ensure parent-child relationships and category groupings are preserved
-
-Verify that all products have complete descriptions including their category name
-
-Make sure no products are missing dimensions or specifications
-
-CRITICAL: PRESERVE PRODUCT HIERARCHY
-
+## CRITICAL: PRESERVE PRODUCT HIERARCHY
 Thai construction quotations often organize products hierarchically by categories:
-
-Category names with descriptive details
-
-Materials and specifications
-
-Dimensions
+- Category names with descriptive details
+- Materials and specifications
+- Dimensions
 
 Each product must include its complete hierarchy:
 "[Category Name] - [Material] - [Type] - [Dimensions]"
 
-Examples (DO NOT add data from the attached Example in the prompt):
+Examples (DO NOT add data from the attached Example in the prompt): 
+- "งานบันไดกระจก งานพื้นตก - เหล็กตัวซีชุบสังกะสี ไม่รวมปูน - กระจกเทมเปอร์ใส หนา 10 มม. ขนาด 4.672×0.97 ม."
+- "งานพื้นตก (ชั้นลอย) - เหล็กตัวซีชุบสังกะสี ไม่รวมปูน - เทมเปอร์ใส หนา 10 มม. ขนาด 3.565×0.97 ม."
 
-"งานบันไดกระจก งานพื้นตก - เหล็กตัวซีชุบสังกะสี ไม่รวมปูน - กระจกเทมเปอร์ใส หนา 10 มม. ขนาด 4.672×0.97 ม."
-
-"งานพื้นตก (ชั้นลอย) - เหล็กตัวซีชุบสังกะสี ไม่รวมปูน - เทมเปอร์ใส หนา 10 มม. ขนาด 3.565×0.97 ม."
-
-CRITICAL: DECIMAL NUMBER ACCURACY
-
+## CRITICAL: DECIMAL NUMBER ACCURACY
 Pay special attention to:
+1. Quantities with decimals (extract full precision)
+2. Dimensions with decimals (preserve exact measurements)
+3. Prices with decimals (maintain exact values)
 
-Quantities with decimals (extract full precision)
-
-Dimensions with decimals (preserve exact measurements)
-
-Prices with decimals (maintain exact values)
-
-CRITICAL: CLEAN PRODUCT DESCRIPTIONS
-
-REMOVE any leading numbers (1., 2., 3., etc.) from product descriptions
-
-Ensure NO product descriptions begin with numbering
-
-Maintain all other hierarchical information and details
+## CRITICAL: CLEAN PRODUCT DESCRIPTIONS
+1. REMOVE any leading numbers (1., 2., 3., etc.) from product descriptions
+2. Ensure NO product descriptions begin with numbering
+3. Maintain all other hierarchical information and details
 
 Review the data carefully and FIX these issues:
-
-ADD any missing products that should be extracted from the source document
-
-FIX product names to include complete hierarchical information WITHOUT leading numbers
-
-ENSURE all dimensions and specifications are preserved with full decimal precision
-
-VERIFY every product has the correct quantity, unit, price and total with full decimal precision
+1. ADD any missing products that should be extracted from the source document
+2. FIX product names to include complete hierarchical information WITHOUT leading numbers
+3. ENSURE all dimensions and specifications are preserved with full decimal precision
+4. VERIFY every product has the correct quantity, unit, price and total with full decimal precision
 
 Original extraction:
 {extracted_json}
@@ -1163,96 +1017,72 @@ Return ONLY a valid JSON object with no explanations.
 matching_prompt = """
 You are a product matching expert specializing in construction materials in Thailand.
 
-TASK
-
+## TASK
 Match products from a target list (new quotation) to a reference list (master product list) based on their attributes, materials, dimensions, and specifications.
 
-CRITICAL MATCHING RULES
+## CRITICAL MATCHING RULES
+1. Focus on the meaning and specifications, not just text similarity
+2. Consider materials, dimensions, thickness, and product type as key matching factors
+3. Each reference product can only be matched ONCE (never match the same reference item to multiple target items)
+4. If a product cannot be matched with high confidence (>70%), leave it unmatched
 
-Focus on the meaning and specifications, not just text similarity
-
-Consider materials, dimensions, thickness, and product type as key matching factors
-
-Each reference product can only be matched ONCE (never match the same reference item to multiple target items)
-
-If a product cannot be matched with high confidence (>70%), leave it unmatched
-
-UNIT CONVERSION AWARENESS
-
+## UNIT CONVERSION AWARENESS
 Pay special attention to dimensions and units:
+- Convert between mm, cm, and m when comparing dimensions (1m = 100cm = 1000mm)
+- Match items with similar dimensions even if units differ (e.g., "4672x970 mm" and "4.672x0.97 m" are the same)
+- Consider products like "ราวกันตกฝังปูน" with similar specifications as potential matches even if dimensions vary slightly
 
-Convert between mm, cm, and m when comparing dimensions (1m = 100cm = 1000mm)
+## INPUT
+- Target Products: New products from a quotation that need to be matched
+- Reference Products: Existing master list of products to match against
 
-Match items with similar dimensions even if units differ (e.g., "4672x970 mm" and "4.672x0.97 m" are the same)
+## MATCHING CRITERIA (in priority order)
+1. Material type match (e.g., glass with glass, steel with steel)
+2. Dimensions match (within 5% tolerance, after unit conversion)
+3. Thickness match (within 5% tolerance, after unit conversion)
+4. Product type/category match
 
-Consider products like "ราวกันตกฝังปูน" with similar specifications as potential matches even if dimensions vary slightly
+## Material Type Examples
+- Glass: กระจก, glass, tempered, เทมเปอร์
+- Steel: เหล็ก, steel, galvanized, ชุบสังกะสี
+- Aluminum: อลูมิเนียม, aluminum, aluminium
+- Wood: ไม้, wood, timber, plywood
 
-INPUT
-
-Target Products: New products from a quotation that need to be matched
-
-Reference Products: Existing master list of products to match against
-
-MATCHING CRITERIA (in priority order)
-
-Material type match (e.g., glass with glass, steel with steel)
-
-Dimensions match (within 5% tolerance, after unit conversion)
-
-Thickness match (within 5% tolerance, after unit conversion)
-
-Product type/category match
-
-Material Type Examples
-
-Glass: กระจก, glass, tempered, เทมเปอร์
-
-Steel: เหล็ก, steel, galvanized, ชุบสังกะสี
-
-Aluminum: อลูมิเนียม, aluminum, aluminium
-
-Wood: ไม้, wood, timber, plywood
-
-OUTPUT FORMAT
-
+## OUTPUT FORMAT
 Return a JSON object with these properties:
-{
-"matchedItems": [
-{
-"name": "reference product name",
-"quantity": target quantity,
-"unit": target unit,
-"pricePerUnit": target price per unit,
-"totalPrice": target total price
-}
-],
-"uniqueItems": [
-{
-"name": "target product name",
-"quantity": target quantity,
-"unit": target unit,
-"pricePerUnit": target price per unit,
-"totalPrice": target total price
-}
-]
-}
+{{
+  "matchedItems": [
+    {{
+      "name": "reference product name",
+      "quantity": target quantity,
+      "unit": target unit,
+      "pricePerUnit": target price per unit,
+      "totalPrice": target total price
+    }}
+  ],
+  "uniqueItems": [
+    {{
+      "name": "target product name",
+      "quantity": target quantity,
+      "unit": target unit,
+      "pricePerUnit": target price per unit,
+      "totalPrice": target total price
+    }}
+  ]
+}}
 
 Where:
+- matchedItems: Array of products that found a match in the reference list
+  - Use the reference product name, but the target's quantity, unit, and prices
+- uniqueItems: Array of target products that couldn't be matched plus any unused reference products
 
-matchedItems: Array of products that found a match in the reference list
-
-Use the reference product name, but the target's quantity, unit, and prices
-
-uniqueItems: Array of target products that couldn't be matched plus any unused reference products
-
-Target Products:
-
+## Target Products:
 {target_products}
 
-Reference Products:
-
+## Reference Products:
 {reference_products}
 """
+
 
 def main():
     st.set_page_config(page_title="ระบบประมวลผลใบเสนอราคา V1.3", layout="centered")
@@ -1397,8 +1227,8 @@ def main():
                 st.subheader("ผลการประมวลผล")
                 if results:
                     st.success(f"ประมวลผลสำเร็จ {len(results)} ไฟล์")
-                    if not os.getenv("CREDS_JSON_ENV"):
-                        st.warning("ไม่พบข้อมูลการเชื่อมต่อ Google Sheets (CREDS_JSON_ENV) จึงไม่สามารถบันทึกข้อมูลได้")
+                    if "gcp_service_account" not in st.secrets:
+                        st.warning("ไม่พบข้อมูลการเชื่อมต่อ Google Sheets ใน secrets.toml จึงไม่สามารถบันทึกข้อมูลได้")
                     
                     for i, result in enumerate(results):
                         with st.expander(f"ไฟล์ {i+1}: {result.get('company', 'Unknown Company')}"):
