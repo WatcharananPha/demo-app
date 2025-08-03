@@ -1,3 +1,4 @@
+google-generativeai
 gspread
 python-dotenv
 oauth2client
@@ -11,4 +12,3 @@ python-multipart
 pydantic
 uvicorn[standard]
 gunicorn
-google-generativeai
