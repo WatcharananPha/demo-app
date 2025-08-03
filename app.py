@@ -26,6 +26,7 @@ HEADER_ROW = 3
 ITEM_MASTER_LIST_COL = 2
 COLUMNS_PER_SUPPLIER = 4
 
+
 def extract_sheet_id_from_url(url):
     if not url:
         return None
@@ -33,6 +34,7 @@ def extract_sheet_id_from_url(url):
         return url
     m = re.search(r"spreadsheets/d/([a-zA-Z0-9-_]+)", url)
     return m.group(1) if m else None
+
 
 def extract_json_from_text(text):
     start = text.find("{")
@@ -47,11 +49,12 @@ def extract_json_from_text(text):
             return None
     return None
 
+
 def extract_contact_info(text):
     if not text:
         return ""
     phone_pattern = r"(?<!\w)((0\d{1,2}[-\s]?\d{3}[-\s]?\d{3,4})|(0\d{2}[-\s]?\d{7})|(0\d{2}[-\s]?\d{3}[-\s]?\d{4}))(?!\w)"
-    email_pattern = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+.[a-zA-Z]{2,}"
+    email_pattern = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
     phone_matches = re.findall(phone_pattern, text)
     email_matches = re.findall(email_pattern, text)
     phone_numbers = [m[0] for m in phone_matches] if phone_matches else []
@@ -67,10 +70,12 @@ def extract_contact_info(text):
         contact_parts.append(f"Phone: {', '.join(formatted_phones)}")
     return ", ".join(contact_parts)
 
+
 def clean_product_name(name):
     if not name:
         return "Unknown Product"
-    return re.sub(r"^\d+.\s*", "", name.strip())
+    return re.sub(r"^\d+\.\s*", "", name.strip())
+
 
 def validate_json_data(json_data):
     if not json_data:
@@ -197,13 +202,15 @@ def enhance_with_gemini(json_data):
     model = genai.GenerativeModel(model_name="gemini-2.5-flash")
     response = model.generate_content(validation_formatted)
     enhanced_text = response.text.strip()
-    blocks = re.findall(r"(?:json)?(.*?)```", enhanced_text, re.DOTALL)
-    if blocks:
-        enhanced_text = blocks[0].strip()
+    if "```" in enhanced_text:
+        blocks = re.findall(r"```(?:json)?(.*?)```", enhanced_text, re.DOTALL)
+        if blocks:
+            enhanced_text = blocks[0].strip()
     enhanced_data = json.loads(enhanced_text) if enhanced_text else json_data
     if not isinstance(enhanced_data, dict):
         enhanced_data = extract_json_from_text(enhanced_text)
-    return enhanced_data if enhanced_data else json_data
+        return enhanced_data if enhanced_data else json_data
+    return enhanced_data
 
 def match_products_with_gemini(target_products, reference_products):
     if not target_products or not reference_products:
@@ -218,9 +225,10 @@ def match_products_with_gemini(target_products, reference_products):
     )
     response = model.generate_content(match_prompt_formatted)
     match_text = response.text.strip()
-    blocks = re.findall(r"(?:json)?(.*?)```", match_text, re.DOTALL)
-    if blocks:
-        match_text = blocks[0].strip()
+    if "```" in match_text:
+        blocks = re.findall(r"```(?:json)?(.*?)```", match_text, re.DOTALL)
+        if blocks:
+            match_text = blocks[0].strip()
     match_data = None
     try:
         match_data = json.loads(match_text)
@@ -236,12 +244,9 @@ def match_products_with_gemini(target_products, reference_products):
 
 def authenticate_and_open_sheet(sheet_id):
     try:
-        # Check if the secrets are available in the Streamlit secrets
         if "gcp_service_account" not in st.secrets:
             st.error("Google Sheets credentials not found in .streamlit/secrets.toml")
             return None
-            
-        # Use the GCP service account credentials from secrets
         creds = Credentials.from_service_account_info(
             st.secrets["gcp_service_account"],
             scopes=SCOPES
@@ -267,10 +272,8 @@ def find_next_available_column(ws):
                 m = max(m, i + 1)
     return m + 1
 
+
 def update_google_sheet_for_single_file(ws, data):
-    if not ws:
-        return 0
-        
     ensure_first_three_rows_exist(ws)
     start_row = HEADER_ROW + 1
     sheet_values = ws.get_all_values()
@@ -430,6 +433,7 @@ def update_google_sheet_for_single_file(ws, data):
     ]
 
     if summary_row_map:
+
         for label, value in summary_items:
             if label in summary_row_map:
                 batch_requests.append(
@@ -457,10 +461,8 @@ def update_google_sheet_for_single_file(ws, data):
 
     return 1
 
+
 def update_google_sheet_with_multiple_files(ws, all_json_data):
-    if not ws:
-        return 0
-        
     if len(all_json_data) == 1:
         return update_google_sheet_for_single_file(ws, all_json_data[0])
 
@@ -1083,9 +1085,8 @@ Where:
 {reference_products}
 """
 
-
 def main():
-    st.set_page_config(page_title="ระบบประมวลผลใบเสนอราคา V1.3", layout="centered")
+    st.set_page_config(page_title="ระบบประมวลผลใบเสนอราคา", layout="centered")
     st.markdown("<h1 style='text-align: center;'>ระบบประมวลผลใบเสนอราคา</h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center;'>อัปโหลดไฟล์ใบเสนอราคา (PDF หรือรูปภาพ) เพื่อประมวลผลและส่งข้อมูลเข้า Google Sheet</p>", unsafe_allow_html=True)
 
