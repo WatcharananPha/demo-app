@@ -1204,6 +1204,16 @@ def main():
                         """,
                         unsafe_allow_html=True
                     )
+                
+                st.subheader("ผลการประมวลผล")
+                if results:
+                    st.success(f"ประมวลผลสำเร็จ {len(results)} ไฟล์ และบันทึกข้อมูลลงใน Google Sheet แล้ว")
                     
+                    for i, result in enumerate(results):
+                        with st.expander(f"ไฟล์ {i+1}: {result.get('company', 'Unknown Company')}"):
+                            st.json(result)
+                else:
+                    st.error("ไม่สามารถประมวลผลไฟล์ได้ กรุณาตรวจสอบไฟล์และลองใหม่อีกครั้ง")
+
 if __name__ == "__main__":
     main()

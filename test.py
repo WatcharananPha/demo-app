@@ -8,17 +8,15 @@ import mimetypes
 import streamlit as st
 from google.oauth2.service_account import Credentials
 from openpyxl.utils import get_column_letter
-from dotenv import load_dotenv
 
-load_dotenv()
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+genai.configure(api_key=st.secrets.get("GOOGLE_API_KEY"))
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.file",
 ]
 
-CREDS_FILE = os.getenv("CREDS_JSON_ENV")
+CREDS_FILE = st.secrets.get("CREDS_JSON_ENV")
 DEFAULT_SHEET_ID = "17tMHStXQYXaIQHQIA4jdUyHaYt_tuoNCEEuJCstWEuw"
 
 COMPANY_NAME_ROW = 1
