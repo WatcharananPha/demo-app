@@ -12,3 +12,4 @@ python-multipart
 pydantic
 uvicorn[standard]
 gunicorn
+openpyxl
