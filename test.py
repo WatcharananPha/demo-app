@@ -8,15 +8,17 @@ import mimetypes
 import streamlit as st
 from google.oauth2.service_account import Credentials
 from openpyxl.utils import get_column_letter
+from dotenv import load_dotenv
 
-genai.configure(api_key=st.secrets.get("GOOGLE_API_KEY"))
+load_dotenv()
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.file",
 ]
 
-CREDS_FILE = st.secrets.get("CREDS_JSON_ENV")
+CREDS_FILE = os.getenv("CREDS_JSON_ENV")
 DEFAULT_SHEET_ID = "17tMHStXQYXaIQHQIA4jdUyHaYt_tuoNCEEuJCstWEuw"
 
 COMPANY_NAME_ROW = 1
@@ -1204,6 +1206,16 @@ def main():
                         """,
                         unsafe_allow_html=True
                     )
+                
+                st.subheader("ผลการประมวลผล")
+                if results:
+                    st.success(f"ประมวลผลสำเร็จ {len(results)} ไฟล์ และบันทึกข้อมูลลงใน Google Sheet แล้ว")
                     
+                    for i, result in enumerate(results):
+                        with st.expander(f"ไฟล์ {i+1}: {result.get('company', 'Unknown Company')}"):
+                            st.json(result)
+                else:
+                    st.error("ไม่สามารถประมวลผลไฟล์ได้ กรุณาตรวจสอบไฟล์และลองใหม่อีกครั้ง")
+
 if __name__ == "__main__":
     main()
