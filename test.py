@@ -3,37 +3,20 @@ import json
 import tempfile
 import re
 import google.generativeai as genai
-import gspread
 import mimetypes
-from matplotlib.pyplot import step
 import streamlit as st
-from google.oauth2.service_account import Credentials
+from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
+from openpyxl.styles import Font, Alignment
 from dotenv import load_dotenv
 
 load_dotenv()
-
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive.file",
-]
-
-CREDS_FILE = os.getenv("CREDS_JSON_ENV")
-DEFAULT_SHEET_ID = "17tMHStXQYXaIQHQIA4jdUyHaYt_tuoNCEEuJCstWEuw"
 
 COMPANY_NAME_ROW = 1
 CONTACT_INFO_ROW = 2
 HEADER_ROW = 3
 ITEM_MASTER_LIST_COL = 2
 COLUMNS_PER_SUPPLIER = 4
-
-def extract_sheet_id_from_url(url):
-    if not url:
-        return None
-    if "/" not in url and " " not in url and len(url) > 20:
-        return url
-    m = re.search(r"spreadsheets/d/([a-zA-Z0-9-_]+)", url)
-    return m.group(1) if m else None
 
 def extract_json_from_text(text):
     start = text.find("{")
@@ -42,10 +25,7 @@ def extract_json_from_text(text):
         json_str = text[start:end]
         cleaned_json = re.sub(r",\s*}", "}", json_str)
         cleaned_json = re.sub(r",\s*]", "]", cleaned_json)
-        try:
-            return json.loads(cleaned_json)
-        except json.JSONDecodeError:
-            return None
+        return json.loads(cleaned_json)
     return None
 
 def extract_contact_info(text):
@@ -226,9 +206,8 @@ def match_products_with_gemini(target_products, reference_products):
         if blocks:
             match_text = blocks[0].strip()
     match_data = None
-    try:
-        match_data = json.loads(match_text)
-    except json.JSONDecodeError:
+    match_data = json.loads(match_text)
+    if not match_data:
         match_data = extract_json_from_text(match_text)
     if not match_data:
         return {"matchedItems": [], "uniqueItems": target_products}
@@ -238,68 +217,33 @@ def match_products_with_gemini(target_products, reference_products):
         match_data["uniqueItems"] = target_products
     return match_data
 
-def authenticate_and_open_sheet(sheet_id):
-    creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
-    client = gspread.authorize(creds)
-    return client.open_by_key(sheet_id).get_worksheet(0)
+def create_excel_file():
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Quotations"
+    return wb, ws
 
-def ensure_first_three_rows_exist(ws):
-    p = []
-    for i in range(1, 4):
-        p.append({"range": f"A{i}:B{i}", "values": [["", ""]]})
-    ws.batch_update(p, value_input_option="USER_ENTERED")
-
-def find_next_available_column(ws):
-    vals = ws.get_all_values()
-    m = ITEM_MASTER_LIST_COL
-    for row in vals[:HEADER_ROW]:
-        for i, c in enumerate(row):
-            if c.strip():
-                m = max(m, i + 1)
-    return m + 1
-
-def update_google_sheet_for_single_file(ws, data):
-    ensure_first_three_rows_exist(ws)
+def update_excel_for_single_file(ws, data):
     start_row = HEADER_ROW + 1
-    sheet_values = ws.get_all_values()
     existing_products = []
-    SUMMARY_LABELS = [
-        "รวมเป็นเงิน",
-        "ภาษีมูลค่าเพิ่ม 7%",
-        "ยอดรวมทั้งสิ้น",
-        "กำหนดยืนราคา (วัน)",
-        "ระยะเวลาส่งมอบสินค้าหลังจากได้รับ PO",
-        "การชำระเงิน",
-        "อื่น ๆ",
-    ]
-    summary_row_map = {}
-    first_summary_row = -1
-
-    for row_idx, row in enumerate(sheet_values[HEADER_ROW:], start=start_row):
-        if len(row) >= ITEM_MASTER_LIST_COL and row[ITEM_MASTER_LIST_COL - 1].strip():
-            cell_value = row[ITEM_MASTER_LIST_COL - 1].strip()
-            if cell_value in SUMMARY_LABELS:
-                if first_summary_row == -1:
-                    first_summary_row = row_idx
-                summary_row_map[cell_value] = row_idx
-            else:
-                product_name = clean_product_name(cell_value)
-                existing_products.append({"name": product_name, "row": row_idx})
+    
+    for row in range(start_row, ws.max_row + 1):
+        cell_value = ws.cell(row=row, column=ITEM_MASTER_LIST_COL).value
+        if cell_value and str(cell_value).strip():
+            product_name = clean_product_name(str(cell_value).strip())
+            existing_products.append({"name": product_name, "row": row})
 
     existing_suppliers = {}
-    for col_idx in range(
-        ITEM_MASTER_LIST_COL,
-        len(sheet_values[0]) if sheet_values else 0,
-        COLUMNS_PER_SUPPLIER,
-    ):
-        if COMPANY_NAME_ROW - 1 < len(sheet_values) and col_idx < len(
-            sheet_values[COMPANY_NAME_ROW - 1]
-        ):
-            supplier_name = sheet_values[COMPANY_NAME_ROW - 1][col_idx].strip()
-            if supplier_name:
-                existing_suppliers[supplier_name] = col_idx
+    for col in range(ITEM_MASTER_LIST_COL, ws.max_column + 1, COLUMNS_PER_SUPPLIER):
+        supplier_cell = ws.cell(row=COMPANY_NAME_ROW, column=col)
+        if supplier_cell.value and str(supplier_cell.value).strip():
+            existing_suppliers[str(supplier_cell.value).strip()] = col
 
-    next_avail_col = find_next_available_column(ws)
+    next_avail_col = ITEM_MASTER_LIST_COL
+    for row in range(1, HEADER_ROW + 1):
+        for col in range(ITEM_MASTER_LIST_COL, ws.max_column + 1):
+            if ws.cell(row=row, column=col).value:
+                next_avail_col = max(next_avail_col, col + 1)
 
     products = data.get("products", [])
     if not products:
@@ -311,22 +255,13 @@ def update_google_sheet_for_single_file(ws, data):
 
     company_name = data.get("company", "Unknown Company")
     col_idx = existing_suppliers.get(company_name, next_avail_col)
-    if col_idx == next_avail_col:
-        next_avail_col += COLUMNS_PER_SUPPLIER
-    batch_requests = [
-        {
-            "range": f"{get_column_letter(col_idx)}{COMPANY_NAME_ROW}",
-            "values": [[company_name]],
-        },
-        {
-            "range": f"{get_column_letter(col_idx)}{CONTACT_INFO_ROW}",
-            "values": [[f"{data.get('contact','')}".strip()]],
-        },
-        {
-            "range": f"{get_column_letter(col_idx)}{HEADER_ROW}:{get_column_letter(col_idx+COLUMNS_PER_SUPPLIER-1)}{HEADER_ROW}",
-            "values": [["ปริมาณ", "หน่วย", "ราคาต่อหน่วย", "รวมเป็นเงิน"]],
-        },
-    ]
+
+    ws.cell(row=COMPANY_NAME_ROW, column=col_idx, value=company_name)
+    ws.cell(row=CONTACT_INFO_ROW, column=col_idx, value=data.get('contact', ''))
+    
+    headers = ["ปริมาณ", "หน่วย", "ราคาต่อหน่วย", "รวมเป็นเงิน"]
+    for i, header in enumerate(headers):
+        ws.cell(row=HEADER_ROW, column=col_idx + i, value=header)
 
     reference_data = [{"name": item["name"]} for item in existing_products]
     match_results = match_products_with_gemini(products, reference_data)
@@ -338,75 +273,32 @@ def update_google_sheet_for_single_file(ws, data):
         item_name = item["name"]
         for existing in existing_products:
             if existing["name"] == item_name and existing["row"] not in populated_rows:
-                batch_requests.append(
-                    {
-                        "range": f"{get_column_letter(col_idx)}{existing['row']}:{get_column_letter(col_idx+COLUMNS_PER_SUPPLIER-1)}{existing['row']}",
-                        "values": [
-                            [
-                                item.get("quantity", 1),
-                                item.get("unit", "ชิ้น"),
-                                item.get("pricePerUnit", 0),
-                                item.get("totalPrice", 0),
-                            ]
-                        ],
-                    }
-                )
-                populated_rows.add(existing["row"])
+                row = existing["row"]
+                ws.cell(row=row, column=col_idx, value=item.get("quantity", 1))
+                ws.cell(row=row, column=col_idx + 1, value=item.get("unit", "ชิ้น"))
+                ws.cell(row=row, column=col_idx + 2, value=item.get("pricePerUnit", 0))
+                ws.cell(row=row, column=col_idx + 3, value=item.get("totalPrice", 0))
+                populated_rows.add(row)
                 break
 
     new_products = []
     for item in unique_items:
         if isinstance(item, dict) and "name" in item and "quantity" in item:
             item["name"] = clean_product_name(item["name"])
-
-            if not any(
-                existing["name"] == item["name"] for existing in existing_products
-            ):
+            if not any(existing["name"] == item["name"] for existing in existing_products):
                 new_products.append(item)
 
-    insertion_row = (
-        first_summary_row
-        if first_summary_row > 0
-        else (start_row + len(existing_products))
-    )
+    insertion_row = start_row + len(existing_products)
 
-    if new_products:
-        new_rows = []
-        for _ in range(len(new_products)):
-            new_rows.append([""] * ws.col_count)
+    for i, product in enumerate(new_products):
+        row = insertion_row + i
+        ws.cell(row=row, column=ITEM_MASTER_LIST_COL, value=product.get("name", "Unknown Product"))
+        ws.cell(row=row, column=col_idx, value=product.get("quantity", 1))
+        ws.cell(row=row, column=col_idx + 1, value=product.get("unit", "ชิ้น"))
+        ws.cell(row=row, column=col_idx + 2, value=product.get("pricePerUnit", 0))
+        ws.cell(row=row, column=col_idx + 3, value=product.get("totalPrice", 0))
 
-        if new_rows:
-            ws.insert_rows(new_rows, insertion_row)
-
-        row_shift = len(new_products)
-        if first_summary_row > 0:
-            for label in summary_row_map:
-                summary_row_map[label] += row_shift
-
-        for i, product in enumerate(new_products):
-            row = insertion_row + i
-            batch_requests.append(
-                {
-                    "range": f"{get_column_letter(ITEM_MASTER_LIST_COL)}{row}",
-                    "values": [[product.get("name", "Unknown Product")]],
-                }
-            )
-
-            batch_requests.append(
-                {
-                    "range": f"{get_column_letter(col_idx)}{row}:{get_column_letter(col_idx+COLUMNS_PER_SUPPLIER-1)}{row}",
-                    "values": [
-                        [
-                            product.get("quantity", 1),
-                            product.get("unit", "ชิ้น"),
-                            product.get("pricePerUnit", 0),
-                            product.get("totalPrice", 0),
-                        ]
-                    ],
-                }
-            )
-
-    price_col = col_idx + COLUMNS_PER_SUPPLIER - 1
+    summary_row = insertion_row + len(new_products) + 2
     summary_items = [
         ("รวมเป็นเงิน", data.get("totalPrice", 0)),
         ("ภาษีมูลค่าเพิ่ม 7%", data.get("totalVat", 0)),
@@ -417,208 +309,20 @@ def update_google_sheet_for_single_file(ws, data):
         ("อื่น ๆ", data.get("otherNotes", "")),
     ]
 
-    if summary_row_map:
-        for label, value in summary_items:
-            if label in summary_row_map:
-                batch_requests.append(
-                    {
-                        "range": f"{get_column_letter(price_col)}{summary_row_map[label]}",
-                        "values": [[value]],
-                    }
-                )
-    else:
-        summary_row = insertion_row + len(new_products) + 2
-        for i, (label, value) in enumerate(summary_items):
-            row = summary_row + i
-            batch_requests.append(
-                {
-                    "range": f"{get_column_letter(ITEM_MASTER_LIST_COL)}{row}",
-                    "values": [[label]],
-                }
-            )
-            batch_requests.append(
-                {"range": f"{get_column_letter(price_col)}{row}", "values": [[value]]}
-            )
-
-    if batch_requests:
-        ws.batch_update(batch_requests, value_input_option="USER_ENTERED")
+    for i, (label, value) in enumerate(summary_items):
+        row = summary_row + i
+        ws.cell(row=row, column=ITEM_MASTER_LIST_COL, value=label)
+        ws.cell(row=row, column=col_idx + 3, value=value)
 
     return 1
 
-def update_google_sheet_with_multiple_files(ws, all_json_data):
-    if len(all_json_data) == 1:
-        return update_google_sheet_for_single_file(ws, all_json_data[0])
-
-    ensure_first_three_rows_exist(ws)
-    start_row = HEADER_ROW + 1
-    sheet_values = ws.get_all_values()
-    existing_products = []
-    matched_product_rows = set()
-
-    for row_idx, row in enumerate(sheet_values[HEADER_ROW:], start=start_row):
-        if len(row) >= ITEM_MASTER_LIST_COL and row[ITEM_MASTER_LIST_COL - 1].strip():
-            product_name = clean_product_name(row[ITEM_MASTER_LIST_COL - 1].strip())
-            existing_products.append({"name": product_name, "row": row_idx})
-
-    existing_suppliers = {}
-    for col_idx in range(
-        ITEM_MASTER_LIST_COL,
-        len(sheet_values[0]) if sheet_values else 0,
-        COLUMNS_PER_SUPPLIER,
-    ):
-        if COMPANY_NAME_ROW - 1 < len(sheet_values) and col_idx < len(
-            sheet_values[COMPANY_NAME_ROW - 1]
-        ):
-            supplier_name = sheet_values[COMPANY_NAME_ROW - 1][col_idx].strip()
-            if supplier_name:
-                existing_suppliers[supplier_name] = col_idx
-
-    next_avail_col = find_next_available_column(ws)
-
-    for data in all_json_data:
-        products = data.get("products", [])
-        if not products:
-            continue
-
-        for product in products:
-            if product.get("name"):
-                product["name"] = clean_product_name(product["name"])
-
-        company_name = data.get("company", "Unknown Company")
-
-        col_idx = existing_suppliers.get(company_name, next_avail_col)
-        if col_idx == next_avail_col:
-            next_avail_col += COLUMNS_PER_SUPPLIER
-
-        batch_requests = [
-            {
-                "range": f"{get_column_letter(col_idx)}{COMPANY_NAME_ROW}",
-                "values": [[company_name]],
-            },
-            {
-                "range": f"{get_column_letter(col_idx)}{CONTACT_INFO_ROW}",
-                "values": [[f"{data.get('contact','')}".strip()]],
-            },
-            {
-                "range": f"{get_column_letter(col_idx)}{HEADER_ROW}:{get_column_letter(col_idx+COLUMNS_PER_SUPPLIER-1)}{HEADER_ROW}",
-                "values": [["ปริมาณ", "หน่วย", "ราคาต่อหน่วย", "รวมเป็นเงิน"]],
-            },
-        ]
-
-        reference_data = [{"name": item["name"]} for item in existing_products]
-        match_results = match_products_with_gemini(products, reference_data)
-        matched_items = match_results["matchedItems"]
-        unique_items = match_results["uniqueItems"]
-
-        populated_rows = set()
-
-        for item in matched_items:
-            item_name = item["name"]
-            for existing in existing_products:
-                if (
-                    existing["name"] == item_name
-                    and existing["row"] not in populated_rows
-                ):
-                    batch_requests.append(
-                        {
-                            "range": f"{get_column_letter(col_idx)}{existing['row']}:{get_column_letter(col_idx+COLUMNS_PER_SUPPLIER-1)}{existing['row']}",
-                            "values": [
-                                [
-                                    item.get("quantity", 1),
-                                    item.get("unit", "ชิ้น"),
-                                    item.get("pricePerUnit", 0),
-                                    item.get("totalPrice", 0),
-                                ]
-                            ],
-                        }
-                    )
-                    populated_rows.add(existing["row"])
-                    break
-
-        new_products = []
-        for item in unique_items:
-            if isinstance(item, dict) and "name" in item and "quantity" in item:
-                item["name"] = clean_product_name(item["name"])
-
-                if not any(
-                    existing["name"] == item["name"] for existing in existing_products
-                ):
-                    new_products.append(item)
-
-        next_row = start_row + len(existing_products)
-
-        if new_products:
-            new_rows = []
-            for _ in range(len(new_products)):
-                new_rows.append([""] * ws.col_count)
-
-            if new_rows:
-                ws.insert_rows(new_rows, next_row)
-
-            for i, product in enumerate(new_products):
-                row = next_row + i
-                batch_requests.append(
-                    {
-                        "range": f"{get_column_letter(ITEM_MASTER_LIST_COL)}{row}",
-                        "values": [[product.get("name", "Unknown Product")]],
-                    }
-                )
-
-                batch_requests.append(
-                    {
-                        "range": f"{get_column_letter(col_idx)}{row}:{get_column_letter(col_idx+COLUMNS_PER_SUPPLIER-1)}{row}",
-                        "values": [
-                            [
-                                product.get("quantity", 1),
-                                product.get("unit", "ชิ้น"),
-                                product.get("pricePerUnit", 0),
-                                product.get("totalPrice", 0),
-                            ]
-                        ],
-                    }
-                )
-
-                existing_products.append(
-                    {"name": product.get("name", "Unknown Product"), "row": row}
-                )
-
-        summary_row = start_row + len(existing_products) + 2
-        summary_items = [
-            ("รวมเป็นเงิน", data.get("totalPrice", 0)),
-            ("ภาษีมูลค่าเพิ่ม 7%", data.get("totalVat", 0)),
-            ("ยอดรวมทั้งสิ้น", data.get("totalPriceIncludeVat", 0)),
-            ("กำหนดยืนราคา (วัน)", data.get("priceGuaranteeDay", "")),
-            ("ระยะเวลาส่งมอบสินค้าหลังจากได้รับ PO", data.get("deliveryTime", "")),
-            ("การชำระเงิน", data.get("paymentTerms", "")),
-            ("อื่น ๆ", data.get("otherNotes", "")),
-        ]
-
-        for i, (label, value) in enumerate(summary_items):
-            row = summary_row + i
-            batch_requests.append(
-                {
-                    "range": f"{get_column_letter(ITEM_MASTER_LIST_COL)}{row}",
-                    "values": [[label]],
-                }
-            )
-            batch_requests.append(
-                {
-                    "range": f"{get_column_letter(col_idx+COLUMNS_PER_SUPPLIER-1)}{row}",
-                    "values": [[value]],
-                }
-            )
-
-        if batch_requests:
-            ws.batch_update(batch_requests, value_input_option="USER_ENTERED")
-
-        if col_idx not in existing_suppliers.values():
-            existing_suppliers[company_name] = col_idx
-
-    return len(all_json_data)
+def save_excel_file(wb, filename):
+    filepath = f"{filename}.xlsx"
+    wb.save(filepath)
+    return filepath
 
 def get_file_type(file_path):
     mime_type, _ = mimetypes.guess_type(file_path)
-
     if mime_type:
         if mime_type.startswith("image/"):
             return "image"
@@ -629,7 +333,6 @@ def get_file_type(file_path):
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         ]:
             return "word"
-
     ext = os.path.splitext(file_path)[1].lower()
     if ext in [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".gif"]:
         return "image"
@@ -637,7 +340,6 @@ def get_file_type(file_path):
         return "pdf"
     elif ext in [".doc", ".docx"]:
         return "word"
-
     return "unknown"
 
 def process_file(file_path):
@@ -676,19 +378,24 @@ def process_file(file_path):
     os.unlink(tmp.name)
     return d
 
-def process_files(file_paths, sheet_id=DEFAULT_SHEET_ID):
+def process_files_to_excel(file_paths):
     data_list = []
     for p in file_paths:
         d = process_file(p)
         if d:
             data_list.append(d)
+    
     if data_list:
-        ws = authenticate_and_open_sheet(sheet_id)
-        update_google_sheet_with_multiple_files(ws, data_list)
-    return data_list
+        wb, ws = create_excel_file()
+        for data in data_list:
+            update_excel_for_single_file(ws, data)
+        
+        filename = f"quotations_{len(data_list)}_files"
+        filepath = save_excel_file(wb, filename)
+        return data_list, filepath
+    
+    return data_list, None
 
-def process_pdfs(pdf_paths, sheet_id=DEFAULT_SHEET_ID):
-    return process_files(pdf_paths, sheet_id)
 
 prompt = """# System Message for Product List Extraction (PDF/Text Table Processing)
 ## CRITICAL: ANTI-HALLUCINATION WARNING
@@ -1000,41 +707,48 @@ Return ONLY a valid JSON object with no explanations.
 """
 
 matching_prompt = """
-You are a product matching expert specializing in construction materials in Thailand.
+# System Role: AI Product Matching Specialist for Thai Construction Materials
 
-## TASK
-Match products from a target list (new quotation) to a reference list (master product list) based on their attributes, materials, dimensions, and specifications.
+You are an expert AI system specializing in matching construction materials in Thailand. Your primary goal is to intelligently link products from a new quotation (`target_products`) to a master list (`reference_products`).
 
-## CRITICAL MATCHING RULES
-1. Focus on the meaning and specifications, not just text similarity
-2. Consider materials, dimensions, thickness, and product type as key matching factors
-3. Each reference product can only be matched ONCE (never match the same reference item to multiple target items)
-4. If a product cannot be matched with high confidence (>70%), leave it unmatched
+## Core Philosophy: "Match with Intent"
+Your task is NOT simple text comparison. You must understand the **function, context, and intent** of each product. Assume that over 90% of `target_products` have a logical equivalent in `reference_products`. Your default stance should be to find a match. Only classify an item as unique if there is a clear, significant, and undeniable difference in its core specification.
 
-## UNIT CONVERSION AWARENESS
-Pay special attention to dimensions and units:
-- Convert between mm, cm, and m when comparing dimensions (1m = 100cm = 1000mm)
-- Match items with similar dimensions even if units differ (e.g., "4672x970 mm" and "4.672x0.97 m" are the same)
-- Consider products like "ราวกันตกฝังปูน" with similar specifications as potential matches even if dimensions vary slightly
+---
 
-## INPUT
-- Target Products: New products from a quotation that need to be matched
-- Reference Products: Existing master list of products to match against
+## Hierarchical Matching Criteria (Apply with Strict Priority)
 
-## MATCHING CRITERIA (in priority order)
-1. Material type match (e.g., glass with glass, steel with steel)
-2. Dimensions match (within 5% tolerance, after unit conversion)
-3. Thickness match (within 5% tolerance, after unit conversion)
-4. Product type/category match
+### Priority 1: Core System & Material Specification
+This is the MOST IMPORTANT factor. A product is defined by how it's built and what it's made of.
+- **Rule:** The fundamental construction system and primary material specification MUST be compatible.
+- **Example:** A `เหล็ก U ชุบ GAV` system is fundamentally different from a `รางอลูมิเนียม สำเร็จรูป` system. A mismatch here means the items are **UNIQUE**, even if dimensions are identical.
+- **Example:** `กระจก 10 มม.` and `กระจก 12 มม.` are different core specifications.
 
-## Material Type Examples
-- Glass: กระจก, glass, tempered, เทมเปอร์
-- Steel: เหล็ก, steel, galvanized, ชุบสังกะสี
-- Aluminum: อลูมิเนียม, aluminum, aluminium
-- Wood: ไม้, wood, timber, plywood
+### Priority 2: Functional Location & Context
+Understand where the product will be installed.
+- **Rule:** Match items with the same functional purpose.
+- **Example:** `ราวกันตกฝังปูน ตำแหน่ง บันได` should strongly prefer matches that also mention `บันได`.
 
-## OUTPUT FORMAT
-Return a JSON object with these properties:
+### Priority 3: Dimensions with Flexible Tolerance
+- **Rule:** After converting all units to millimeters (mm), allow a tolerance of up to **20mm** for any single dimension. If the difference is within this range, consider it a dimensional match.
+- **Unit Conversion is Mandatory:** 1m = 100cm = 1000mm.
+- **Example:** `4672x970 mm` (Target) and `4.672x0.975 m` (Reference, becomes 4672x975mm) have a 5mm difference, which is a **PERFECT MATCH**.
+
+### Priority 4: Secondary Attributes (e.g., Color, Finish)
+These are the least important factors for matching.
+- **Rule:** Differences in secondary attributes should NOT prevent a match if Priority 1, 2, and 3 are met.
+- **Example:** A difference in glass color like `'ใส'` vs. `'Euro Grey'` does not make items unique.
+
+---
+
+## Logic for Handling Conflicts
+- **If a Target item has a perfect dimensional match (Priority 3) but a clear mismatch in Core System/Material (Priority 1), you MUST classify it as UNIQUE.** The Core System is more important than the dimensions.
+
+## Constraint: One-to-One Matching
+- **CRITICAL:** Each item in `reference_products` can be matched only ONCE.
+
+## OUTPUT FORMAT (Strictly JSON)
+Return ONLY a valid JSON object with the following structure. Do not add any explanations.
 {{
   "matchedItems": [
     {{
@@ -1056,20 +770,19 @@ Return a JSON object with these properties:
   ]
 }}
 
-Where:
-- matchedItems: Array of products that found a match in the reference list
-  - Use the reference product name, but the target's quantity, unit, and prices
-- uniqueItems: Array of target products that couldn't be matched plus any unused reference products
+---
 
-## Target Products:
+## INPUTS
+
+### Target Products (New quotation to be matched):
 {target_products}
 
-## Reference Products:
+### Reference Products (Master list to match against):
 {reference_products}
 """
 
 def main():
-    st.set_page_config(page_title="ระบบประมวลผลใบเสนอราคา", layout="centered")
+    st.set_page_config(page_title="ระบบประมวลผลใบเสนอราคา - Excel", layout="centered")
     st.sidebar.title("เพิ่ม API Key เพื่อเริ่มต้นใช้งาน")
     google_api_key = st.sidebar.text_input(
         "Enter your GOOGLE_API_KEY", 
@@ -1080,20 +793,16 @@ def main():
 
     if st.sidebar.button("ยืนยัน", key="confirm_api_key", use_container_width=True):
         if google_api_key:
-            try:
-                genai.configure(api_key=google_api_key)
-                st.session_state.google_api_key = google_api_key
-                st.session_state.api_key_confirmed = True
-                st.sidebar.success("API Key ถูกบันทึกแล้ว")
-            except Exception as e:
-                st.session_state.api_key_confirmed = False
-                st.sidebar.error(f"เกิดข้อผิดพลาด: {e}")
+            genai.configure(api_key=google_api_key)
+            st.session_state.google_api_key = google_api_key
+            st.session_state.api_key_confirmed = True
+            st.sidebar.success("API Key ถูกบันทึกแล้ว")
         else:
             st.session_state.api_key_confirmed = False
             st.sidebar.error("กรุณาใส่ API Key ก่อนยืนยัน")
 
-    st.markdown("<h1 style='text-align: center;'>ระบบประมวลผลใบเสนอราคา</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center;'>อัปโหลดไฟล์ใบเสนอราคา (PDF หรือรูปภาพ) เพื่อประมวลผลและส่งข้อมูลเข้า Google Sheet</p>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>ระบบประมวลผลใบเสนอราคา - Excel</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center;'>อัปโหลดไฟล์ใบเสนอราคา (PDF หรือรูปภาพ) เพื่อประมวลผลและสร้างไฟล์ Excel</p>", unsafe_allow_html=True)
 
     progress_bar = st.empty()
     progress_bar.markdown(
@@ -1107,11 +816,6 @@ def main():
     )
 
     st.subheader("อัปโหลดข้อมูล")
-    sheet_url = st.text_input(
-        "Google Sheet URL or ID:",
-        value=DEFAULT_SHEET_ID,
-        placeholder="ใส่ URL หรือ ID ของ Google Sheet"
-    )
     
     uploaded_files = st.file_uploader(
         "เลือกไฟล์ PDF หรือรูปภาพ (สามารถเลือกได้หลายไฟล์)",
@@ -1142,8 +846,7 @@ def main():
                         tmp_file.write(uploaded_file.getvalue())
                         file_paths.append(tmp_file.name)
                 
-                sheet_id = extract_sheet_id_from_url(sheet_url) if sheet_url else DEFAULT_SHEET_ID
-                results = process_files(file_paths, sheet_id)
+                results, excel_file = process_files_to_excel(file_paths)
                 
                 for path in file_paths:
                     os.unlink(path)
@@ -1159,10 +862,16 @@ def main():
             )
             
             st.subheader("ผลการประมวลผล")
-            if results:
-                st.success(f"✅ ประมวลผลสำเร็จ! ประมวลผลได้ {len(results)} ไฟล์ และบันทึกข้อมูลลง Google Sheet เรียบร้อยแล้ว")
-                sheet_url_display = f"https://docs.google.com/spreadsheets/d/{sheet_id}"
-                st.markdown(f"### [เปิด Google Sheet]({sheet_url_display})")
+            if results and excel_file:
+                st.success(f"✅ ประมวลผลสำเร็จ! ประมวลผลได้ {len(results)} ไฟล์")
+                
+                with open(excel_file, "rb") as file:
+                    st.download_button(
+                        label="📥 ดาวน์โหลดไฟล์ Excel",
+                        data=file.read(),
+                        file_name=f"quotations_{len(results)}_files.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
                 
                 for i, result in enumerate(results):
                     with st.expander(f"📄 ไฟล์ที่ {i+1}: {result.get('company', 'Unknown Company')}"):
