@@ -9,8 +9,6 @@ import streamlit as st
 from google.oauth2.service_account import Credentials
 from openpyxl.utils import get_column_letter
 
-genai.configure(api_key=st.secrets.get("GOOGLE_API_KEY"))
-
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.file",
@@ -1066,153 +1064,106 @@ Where:
 """
 
 def main():
-    st.set_page_config(page_title="ระบบประมวลผลใบเสนอราคา V1.3", layout="centered")
-    
+    st.set_page_config(page_title="ระบบประมวลผลใบเสนอราคา", layout="centered")
+    st.sidebar.title("เพิ่ม API Key เพื่อเริ่มต้นใช้งาน")
+    google_api_key = st.sidebar.text_input(
+        "Enter your GOOGLE_API_KEY", 
+        value=st.session_state.get("google_api_key", ""), 
+        type="password",
+        key="google_api_key_input"
+    )
+
+    if st.sidebar.button("ยืนยัน", key="confirm_api_key", use_container_width=True):
+        if google_api_key:
+            try:
+                genai.configure(api_key=google_api_key)
+                st.session_state.google_api_key = google_api_key
+                st.session_state.api_key_confirmed = True
+                st.sidebar.success("API Key ถูกบันทึกแล้ว")
+            except Exception as e:
+                st.session_state.api_key_confirmed = False
+                st.sidebar.error(f"เกิดข้อผิดพลาด: {e}")
+        else:
+            st.session_state.api_key_confirmed = False
+            st.sidebar.error("กรุณาใส่ API Key ก่อนยืนยัน")
+
     st.markdown("<h1 style='text-align: center;'>ระบบประมวลผลใบเสนอราคา</h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center;'>อัปโหลดไฟล์ใบเสนอราคา (PDF หรือรูปภาพ) เพื่อประมวลผลและส่งข้อมูลเข้า Google Sheet</p>", unsafe_allow_html=True)
 
-    col1, col2, col3 = st.columns(3)
+    progress_bar = st.empty()
+    progress_bar.markdown(
+        """
+        <div style="display:flex; justify-content:space-around; align-items:center; margin-bottom: 2rem;">
+            <div><div style="background-color:#4285F4;color:white;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">1</div><p style="text-align:center;margin-top:5px;">เลือกไฟล์</p></div>
+            <div><div style="background-color:#E8E8E8;color:#666;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">2</div><p style="text-align:center;margin-top:5px;color:#666;">ประมวลผล</p></div>
+            <div><div style="background-color:#E8E8E8;color:#666;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">3</div><p style="text-align:center;margin-top:5px;color:#666;">ผลการประมวลผล</p></div>
+        </div>
+        """, unsafe_allow_html=True
+    )
+
+    st.subheader("อัปโหลดข้อมูล")
+    sheet_url = st.text_input(
+        "Google Sheet URL or ID:",
+        value=DEFAULT_SHEET_ID,
+        placeholder="ใส่ URL หรือ ID ของ Google Sheet"
+    )
     
-    with col1:
-        st.markdown(
-            f"""
-            <div style="background-color:#4285F4;color:white;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">
-                1
-            </div>
-            <p style="text-align:center;margin-top:5px;">เลือกไฟล์</p>
-            """,
-            unsafe_allow_html=True
-        )
+    uploaded_files = st.file_uploader(
+        "เลือกไฟล์ PDF หรือรูปภาพ (สามารถเลือกได้หลายไฟล์)",
+        type=['pdf', 'jpg', 'jpeg', 'png'],
+        accept_multiple_files=True
+    )
     
-    with col2:
-        st.markdown(
-            f"""
-            <div style="background-color:#E8E8E8;color:#666;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">
-                2
-            </div>
-            <p style="text-align:center;margin-top:5px;color:#666;">ประมวลผล</p>
-            """,
-            unsafe_allow_html=True
-        )
-    
-    with col3:
-        st.markdown(
-            f"""
-            <div style="background-color:#E8E8E8;color:#666;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">
-                3
-            </div>
-            <p style="text-align:center;margin-top:5px;color:#666;">ผลการประมวลผล</p>
-            """,
-            unsafe_allow_html=True
-        )
-    
-    with st.container():
-        st.subheader("อัปโหลดข้อมูล")
-        sheet_url = st.text_input(
-            "Google Sheet URL or ID:",
-            placeholder="ใส่ URL หรือ ID ของ Google Sheet",
-            value=DEFAULT_SHEET_ID
-        )
-        
-        uploaded_files = st.file_uploader(
-            "เลือกไฟล์ PDF หรือรูปภาพ (สามารถเลือกได้หลายไฟล์)",
-            type=["pdf", "jpg", "jpeg", "png"],
-            accept_multiple_files=True
-        )
-        
-        if uploaded_files:
-            if st.button("เริ่มประมวลผล", type="primary"):
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.markdown(
-                        f"""
-                        <div style="background-color:#4285F4;color:white;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">
-                            ✓
-                        </div>
-                        <p style="text-align:center;margin-top:5px;">เลือกไฟล์</p>
-                        """,
-                        unsafe_allow_html=True
-                    )
+    if uploaded_files:
+        if st.button("🚀 เริ่มประมวลผล", use_container_width=True):
+            if not st.session_state.get("api_key_confirmed"):
+                st.error("❌ กรุณาใส่และยืนยัน Google API Key ในแถบด้านข้างก่อนเริ่มประมวลผล")
+                return
+
+            progress_bar.markdown(
+                """
+                <div style="display:flex; justify-content:space-around; align-items:center; margin-bottom: 2rem;">
+                    <div><div style="background-color:#4285F4;color:white;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">✓</div><p style="text-align:center;margin-top:5px;">เลือกไฟล์</p></div>
+                    <div><div style="background-color:#4285F4;color:white;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">2</div><p style="text-align:center;margin-top:5px;">ประมวลผล</p></div>
+                    <div><div style="background-color:#E8E8E8;color:#666;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">3</div><p style="text-align:center;margin-top:5px;color:#666;">ผลการประมวลผล</p></div>
+                </div>
+                """, unsafe_allow_html=True
+            )
+
+            with st.spinner('กำลังประมวลผลไฟล์...'):
+                file_paths = []
+                for uploaded_file in uploaded_files:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp_file:
+                        tmp_file.write(uploaded_file.getvalue())
+                        file_paths.append(tmp_file.name)
                 
-                with col2:
-                    st.markdown(
-                        f"""
-                        <div style="background-color:#4285F4;color:white;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">
-                            2
-                        </div>
-                        <p style="text-align:center;margin-top:5px;">ประมวลผล</p>
-                        """,
-                        unsafe_allow_html=True
-                    )
+                sheet_id = extract_sheet_id_from_url(sheet_url) if sheet_url else DEFAULT_SHEET_ID
+                results = process_files(file_paths, sheet_id)
                 
-                with col3:
-                    st.markdown(
-                        f"""
-                        <div style="background-color:#E8E8E8;color:#666;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">
-                            3
-                        </div>
-                        <p style="text-align:center;margin-top:5px;color:#666;">ผลการประมวลผล</p>
-                        """,
-                        unsafe_allow_html=True
-                    )
+                for path in file_paths:
+                    os.unlink(path)
+
+            progress_bar.markdown(
+                """
+                <div style="display:flex; justify-content:space-around; align-items:center; margin-bottom: 2rem;">
+                    <div><div style="background-color:#4285F4;color:white;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">✓</div><p style="text-align:center;margin-top:5px;">เลือกไฟล์</p></div>
+                    <div><div style="background-color:#4285F4;color:white;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">✓</div><p style="text-align:center;margin-top:5px;">ประมวลผล</p></div>
+                    <div><div style="background-color:#4285F4;color:white;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">3</div><p style="text-align:center;margin-top:5px;">ผลการประมวลผล</p></div>
+                </div>
+                """, unsafe_allow_html=True
+            )
+            
+            st.subheader("ผลการประมวลผล")
+            if results:
+                st.success(f"✅ ประมวลผลสำเร็จ! ประมวลผลได้ {len(results)} ไฟล์ และบันทึกข้อมูลลง Google Sheet เรียบร้อยแล้ว")
+                sheet_url_display = f"https://docs.google.com/spreadsheets/d/{sheet_id}"
+                st.markdown(f"### [เปิด Google Sheet]({sheet_url_display})")
                 
-                with st.spinner('กำลังประมวลผลไฟล์...'):
-                    temp_files = []
-                    for uploaded_file in uploaded_files:
-                        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1])
-                        temp_file.write(uploaded_file.read())
-                        temp_file.close()
-                        temp_files.append(temp_file.name)
-                    
-                    sheet_id = extract_sheet_id_from_url(sheet_url) or DEFAULT_SHEET_ID
-                    results = process_files(temp_files, sheet_id)
-                    
-                    for temp_file in temp_files:
-                        os.unlink(temp_file)
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.markdown(
-                        f"""
-                        <div style="background-color:#4285F4;color:white;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">
-                            ✓
-                        </div>
-                        <p style="text-align:center;margin-top:5px;">เลือกไฟล์</p>
-                        """,
-                        unsafe_allow_html=True
-                    )
-                
-                with col2:
-                    st.markdown(
-                        f"""
-                        <div style="background-color:#4285F4;color:white;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">
-                            ✓
-                        </div>
-                        <p style="text-align:center;margin-top:5px;">ประมวลผล</p>
-                        """,
-                        unsafe_allow_html=True
-                    )
-                
-                with col3:
-                    st.markdown(
-                        f"""
-                        <div style="background-color:#4285F4;color:white;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">
-                            3
-                        </div>
-                        <p style="text-align:center;margin-top:5px;">ผลการประมวลผล</p>
-                        """,
-                        unsafe_allow_html=True
-                    )
-                
-                st.subheader("ผลการประมวลผล")
-                if results:
-                    st.success(f"ประมวลผลสำเร็จ {len(results)} ไฟล์ และบันทึกข้อมูลลงใน Google Sheet แล้ว")
-                    
-                    for i, result in enumerate(results):
-                        with st.expander(f"ไฟล์ {i+1}: {result.get('company', 'Unknown Company')}"):
-                            st.json(result)
-                else:
-                    st.error("ไม่สามารถประมวลผลไฟล์ได้ กรุณาตรวจสอบไฟล์และลองใหม่อีกครั้ง")
+                for i, result in enumerate(results):
+                    with st.expander(f"📄 ไฟล์ที่ {i+1}: {result.get('company', 'Unknown Company')}"):
+                        st.json(result)
+            else:
+                st.error("❌ ไม่สามารถประมวลผลไฟล์ได้ กรุณาตรวจสอบไฟล์และลองใหม่อีกครั้ง")
 
 if __name__ == "__main__":
     main()
