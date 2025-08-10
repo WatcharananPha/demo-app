@@ -2,10 +2,13 @@ import os
 import json
 import tempfile
 import re
+import time
+import mimetypes
+
 import google.generativeai as genai
 import gspread
-import mimetypes
 import streamlit as st
+
 from google.oauth2.service_account import Credentials
 from openpyxl.utils import get_column_letter
 
@@ -19,8 +22,18 @@ DEFAULT_SHEET_ID = "17tMHStXQYXaIQHQIA4jdUyHaYt_tuoNCEEuJCstWEuw"
 COMPANY_NAME_ROW = 1
 CONTACT_INFO_ROW = 2
 HEADER_ROW = 3
-ITEM_MASTER_LIST_COL = 2
-COLUMNS_PER_SUPPLIER = 4
+ITEM_MASTER_LIST_COL = 2  # Column B
+COLUMNS_PER_SUPPLIER = 4  # quantity, unit, pricePerUnit, totalPrice
+
+SUMMARY_LABELS = [
+    "รวมเป็นเงิน",
+    "ภาษีมูลค่าเพิ่ม 7%",
+    "ยอดรวมทั้งสิ้น",
+    "กำหนดยืนราคา (วัน)",
+    "ระยะเวลาส่งมอบสินค้าหลังจากได้รับ PO",
+    "การชำระเงิน",
+    "อื่น ๆ",
+]
 
 def extract_sheet_id_from_url(url):
     if not url:
@@ -31,16 +44,27 @@ def extract_sheet_id_from_url(url):
     return m.group(1) if m else None
 
 def extract_json_from_text(text):
-    start = text.find("{")
-    end = text.rfind("}") + 1
-    if start >= 0 and end > start:
-        json_str = text[start:end]
+    if not text:
+        return None
+    # Prefer code block JSON if present
+    blocks = re.findall(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", text)
+    if blocks:
+        candidates = blocks
+    else:
+        # Fallback: first to last brace
+        start = text.find("{")
+        end = text.rfind("}") + 1
+        candidates = [text[start:end]] if start >= 0 and end > start else []
+
+    for cand in candidates:
+        json_str = cand
+        # Remove trailing commas before } or ]
         cleaned_json = re.sub(r",\s*}", "}", json_str)
         cleaned_json = re.sub(r",\s*]", "]", cleaned_json)
         try:
             return json.loads(cleaned_json)
         except json.JSONDecodeError:
-            return None
+            continue
     return None
 
 def extract_contact_info(text):
@@ -51,28 +75,43 @@ def extract_contact_info(text):
     phone_matches = re.findall(phone_pattern, text)
     email_matches = re.findall(email_pattern, text)
     phone_numbers = [m[0] for m in phone_matches] if phone_matches else []
+    # Deduplicate and normalize
+    emails = sorted(set(email_matches))
+    phones = []
+    for phone in phone_numbers:
+        clean_phone = re.sub(r"\s", "", phone)
+        if len(clean_phone) >= 9:
+            phones.append(clean_phone)
+    phones = sorted(set(phones))
     contact_parts = []
-    if email_matches:
-        contact_parts.append(f"Email: {', '.join(email_matches)}")
-    if phone_numbers:
-        formatted_phones = []
-        for phone in phone_numbers:
-            clean_phone = re.sub(r"\s", "", phone)
-            if len(clean_phone) >= 9:
-                formatted_phones.append(clean_phone)
-        contact_parts.append(f"Phone: {', '.join(formatted_phones)}")
+    if emails:
+        contact_parts.append(f"Email: {', '.join(emails)}")
+    if phones:
+        contact_parts.append(f"Phone: {', '.join(phones)}")
     return ", ".join(contact_parts)
 
 def clean_product_name(name):
     if not name:
         return "Unknown Product"
-    return re.sub(r"^\d+\.\s*", "", name.strip())
+    # Remove leading numbering like "1. ", "2) ", "3 - "
+    return re.sub(r"^\s*\d+[\.\)\-]\s*", "", name.strip())
+
+def _to_number_or_default(val, default):
+    s = str(val)
+    s2 = s.replace(",", "")
+    if re.fullmatch(r"-?\d+(\.\d+)?", s2):
+        try:
+            return float(s2)
+        except Exception:
+            return default
+    return default
 
 def validate_json_data(json_data):
     if not json_data:
         return {
             "company": "Unknown Company",
             "contact": "",
+            "vat": False,
             "products": [],
             "totalPrice": 0,
             "totalVat": 0,
@@ -84,96 +123,54 @@ def validate_json_data(json_data):
         }
     if not json_data.get("company"):
         json_data["company"] = "Unknown Company"
+
+    # Normalize contact
     if "contact" in json_data:
         if isinstance(json_data["contact"], dict):
             contact_parts = []
-            if "email" in json_data["contact"]:
+            if "email" in json_data["contact"] and json_data["contact"]["email"]:
                 contact_parts.append(f"Email: {json_data['contact']['email']}")
-            if "phone" in json_data["contact"]:
+            if "phone" in json_data["contact"] and json_data["contact"]["phone"]:
                 contact_parts.append(f"Phone: {json_data['contact']['phone']}")
             json_data["contact"] = ", ".join(contact_parts)
         else:
             json_data["contact"] = extract_contact_info(str(json_data["contact"]))
     else:
         json_data["contact"] = ""
+
+    # Ensure vat present and boolean
+    if "vat" not in json_data:
+        json_data["vat"] = False
+    else:
+        json_data["vat"] = bool(json_data["vat"])
+
+    # Normalize products
     if not json_data.get("products"):
         json_data["products"] = []
     for product in json_data.get("products", []):
-        if product.get("name"):
-            product["name"] = clean_product_name(product["name"])
-        else:
-            product["name"] = "Unknown Product"
-        if not product.get("quantity"):
+        product["name"] = clean_product_name(product.get("name") or "Unknown Product")
+        product["quantity"] = _to_number_or_default(product.get("quantity", 1), 1)
+        if product["quantity"] <= 0:
             product["quantity"] = 1
+        product["unit"] = product.get("unit") or "ชิ้น"
+        product["pricePerUnit"] = _to_number_or_default(product.get("pricePerUnit", 0), 0)
+        # totalPrice: use provided numeric if valid else compute
+        provided_total = _to_number_or_default(product.get("totalPrice", None), None)
+        if provided_total is None:
+            product["totalPrice"] = round(product["quantity"] * product["pricePerUnit"], 2)
         else:
-            product["quantity"] = (
-                float(str(product["quantity"]).replace(",", ""))
-                if str(product["quantity"])
-                .replace(",", "")
-                .replace(".", "", 1)
-                .isdigit()
-                else 1
-            )
-        if not product.get("unit"):
-            product["unit"] = "ชิ้น"
-        if not product.get("pricePerUnit"):
-            product["pricePerUnit"] = 0
-        else:
-            product["pricePerUnit"] = (
-                float(str(product["pricePerUnit"]).replace(",", ""))
-                if str(product["pricePerUnit"])
-                .replace(",", "")
-                .replace(".", "", 1)
-                .isdigit()
-                else 0
-            )
-        if not product.get("totalPrice"):
-            product["totalPrice"] = round(
-                product["quantity"] * product["pricePerUnit"], 2
-            )
-        else:
-            product["totalPrice"] = (
-                float(str(product["totalPrice"]).replace(",", ""))
-                if str(product["totalPrice"])
-                .replace(",", "")
-                .replace(".", "", 1)
-                .isdigit()
-                else round(product["quantity"] * product["pricePerUnit"], 2)
-            )
-    if not json_data.get("totalPrice"):
-        json_data["totalPrice"] = sum(
-            p.get("totalPrice", 0) for p in json_data.get("products", [])
-        )
-    else:
-        json_data["totalPrice"] = (
-            float(str(json_data["totalPrice"]).replace(",", ""))
-            if str(json_data["totalPrice"])
-            .replace(",", "")
-            .replace(".", "", 1)
-            .isdigit()
-            else sum(p.get("totalPrice", 0) for p in json_data.get("products", []))
-        )
-    if not json_data.get("totalVat"):
-        json_data["totalVat"] = round(json_data["totalPrice"] * 0.07, 2)
-    else:
-        json_data["totalVat"] = (
-            float(str(json_data["totalVat"]).replace(",", ""))
-            if str(json_data["totalVat"]).replace(",", "").replace(".", "", 1).isdigit()
-            else round(json_data["totalPrice"] * 0.07, 2)
-        )
-    if not json_data.get("totalPriceIncludeVat"):
-        json_data["totalPriceIncludeVat"] = round(
-            json_data["totalPrice"] + json_data["totalVat"], 2
-        )
-    else:
-        json_data["totalPriceIncludeVat"] = (
-            float(str(json_data["totalPriceIncludeVat"]).replace(",", ""))
-            if str(json_data["totalPriceIncludeVat"])
-            .replace(",", "")
-            .replace(".", "", 1)
-            .isdigit()
-            else round(json_data["totalPrice"] + json_data["totalVat"], 2)
-        )
+            product["totalPrice"] = provided_total
+
+    # Totals
+    computed_total = sum(p.get("totalPrice", 0) for p in json_data.get("products", []))
+    json_data["totalPrice"] = _to_number_or_default(json_data.get("totalPrice", computed_total), computed_total)
+    json_data["totalVat"] = _to_number_or_default(json_data.get("totalVat", round(json_data["totalPrice"] * 0.07, 2)), round(json_data["totalPrice"] * 0.07, 2))
+    json_data["totalPriceIncludeVat"] = _to_number_or_default(
+        json_data.get("totalPriceIncludeVat", round(json_data["totalPrice"] + json_data["totalVat"], 2)),
+        round(json_data["totalPrice"] + json_data["totalVat"], 2),
+    )
+
+    # Other fields
     if "priceGuaranteeDay" not in json_data:
         json_data["priceGuaranteeDay"] = 0
     if "deliveryTime" not in json_data:
@@ -182,6 +179,7 @@ def validate_json_data(json_data):
         json_data["paymentTerms"] = ""
     if "otherNotes" not in json_data:
         json_data["otherNotes"] = ""
+
     return json_data
 
 def enhance_with_gemini(json_data):
@@ -191,21 +189,23 @@ def enhance_with_gemini(json_data):
         extracted_json=json.dumps(json_data, ensure_ascii=False)
     )
     model = genai.GenerativeModel(model_name="gemini-2.5-flash")
-    response = model.generate_content(validation_formatted)
-    enhanced_text = response.text.strip()
-    if "```" in enhanced_text:
-        blocks = re.findall(r"```(?:json)?(.*?)```", enhanced_text, re.DOTALL)
-        if blocks:
-            enhanced_text = blocks[0].strip()
-    enhanced_data = json.loads(enhanced_text) if enhanced_text else json_data
-    if not isinstance(enhanced_data, dict):
-        enhanced_data = extract_json_from_text(enhanced_text)
-        return enhanced_data if enhanced_data else json_data
-    return enhanced_data
+    try:
+        response = model.generate_content(validation_formatted)
+        enhanced_text = (response.text or "").strip()
+    except Exception:
+        return json_data
+
+    enhanced = extract_json_from_text(enhanced_text) or json_data
+    if not isinstance(enhanced, dict):
+        return json_data
+    return enhanced
 
 def match_products_with_gemini(target_products, reference_products):
-    if not target_products or not reference_products:
-        return {"matchedItems": [], "uniqueItems": target_products or []}
+    if not target_products:
+        return {"matchedItems": [], "uniqueItems": []}
+    if not reference_products:
+        return {"matchedItems": [], "uniqueItems": target_products}
+
     match_prompt_formatted = matching_prompt.format(
         target_products=json.dumps(target_products, ensure_ascii=False),
         reference_products=json.dumps(reference_products, ensure_ascii=False),
@@ -214,17 +214,13 @@ def match_products_with_gemini(target_products, reference_products):
         model_name="gemini-2.5-pro",
         generation_config={"temperature": 0.1, "top_p": 0.95},
     )
-    response = model.generate_content(match_prompt_formatted)
-    match_text = response.text.strip()
-    if "```" in match_text:
-        blocks = re.findall(r"```(?:json)?(.*?)```", match_text, re.DOTALL)
-        if blocks:
-            match_text = blocks[0].strip()
-    match_data = None
     try:
-        match_data = json.loads(match_text)
-    except json.JSONDecodeError:
-        match_data = extract_json_from_text(match_text)
+        response = model.generate_content(match_prompt_formatted)
+        match_text = (response.text or "").strip()
+    except Exception:
+        return {"matchedItems": [], "uniqueItems": target_products}
+
+    match_data = extract_json_from_text(match_text)
     if not match_data:
         return {"matchedItems": [], "uniqueItems": target_products}
     if "matchedItems" not in match_data:
@@ -240,36 +236,41 @@ def authenticate_and_open_sheet(sheet_id):
 
 def ensure_first_three_rows_exist(ws):
     p = []
+    # Ensure at least two columns exist
     for i in range(1, 4):
         p.append({"range": f"A{i}:B{i}", "values": [["", ""]]})
     ws.batch_update(p, value_input_option="USER_ENTERED")
 
-def find_next_available_column(ws):
+def _last_non_empty_col_in_top_rows(ws):
     vals = ws.get_all_values()
-    m = ITEM_MASTER_LIST_COL
+    last = ITEM_MASTER_LIST_COL  # at least B
     for row in vals[:HEADER_ROW]:
-        for i, c in enumerate(row):
-            if c.strip():
-                m = max(m, i + 1)
-    return m + 1
+        for i, c in enumerate(row, start=1):
+            if str(c).strip():
+                last = max(last, i)
+    return last
+
+def find_next_available_column(ws):
+    # Suppliers should start at ITEM_MASTER_LIST_COL + 1 (i.e., column C),
+    # and occupy 4 columns per supplier.
+    start_col = ITEM_MASTER_LIST_COL + 1  # C
+    last_used = _last_non_empty_col_in_top_rows(ws)
+    if last_used < start_col:
+        return start_col
+    # Snap to next 4-col group
+    offset = last_used - start_col + 1  # how many cols used from start
+    groups_used = (offset + COLUMNS_PER_SUPPLIER - 1) // COLUMNS_PER_SUPPLIER
+    return start_col + groups_used * COLUMNS_PER_SUPPLIER
 
 def update_google_sheet_for_single_file(ws, data):
     ensure_first_three_rows_exist(ws)
     start_row = HEADER_ROW + 1
     sheet_values = ws.get_all_values()
     existing_products = []
-    SUMMARY_LABELS = [
-        "รวมเป็นเงิน",
-        "ภาษีมูลค่าเพิ่ม 7%",
-        "ยอดรวมทั้งสิ้น",
-        "กำหนดยืนราคา (วัน)",
-        "ระยะเวลาส่งมอบสินค้าหลังจากได้รับ PO",
-        "การชำระเงิน",
-        "อื่น ๆ",
-    ]
     summary_row_map = {}
     first_summary_row = -1
 
+    # Collect existing products and detect existing summary rows
     for row_idx, row in enumerate(sheet_values[HEADER_ROW:], start=start_row):
         if len(row) >= ITEM_MASTER_LIST_COL and row[ITEM_MASTER_LIST_COL - 1].strip():
             cell_value = row[ITEM_MASTER_LIST_COL - 1].strip()
@@ -281,18 +282,19 @@ def update_google_sheet_for_single_file(ws, data):
                 product_name = clean_product_name(cell_value)
                 existing_products.append({"name": product_name, "row": row_idx})
 
+    # Existing suppliers by company name; supplier columns live in 4-col groups starting at C
     existing_suppliers = {}
+    header_row_values = sheet_values[COMPANY_NAME_ROW - 1] if sheet_values else []
     for col_idx in range(
-        ITEM_MASTER_LIST_COL,
-        len(sheet_values[0]) if sheet_values else 0,
+        ITEM_MASTER_LIST_COL + 1,
+        len(header_row_values) + 1,
         COLUMNS_PER_SUPPLIER,
     ):
-        if COMPANY_NAME_ROW - 1 < len(sheet_values) and col_idx < len(
-            sheet_values[COMPANY_NAME_ROW - 1]
-        ):
-            supplier_name = sheet_values[COMPANY_NAME_ROW - 1][col_idx].strip()
-            if supplier_name:
-                existing_suppliers[supplier_name] = col_idx
+        supplier_name = ""
+        if COMPANY_NAME_ROW - 1 < len(sheet_values) and (col_idx - 1) < len(sheet_values[COMPANY_NAME_ROW - 1]):
+            supplier_name = sheet_values[COMPANY_NAME_ROW - 1][col_idx - 1].strip()
+        if supplier_name:
+            existing_suppliers[supplier_name] = col_idx
 
     next_avail_col = find_next_available_column(ws)
 
@@ -308,6 +310,7 @@ def update_google_sheet_for_single_file(ws, data):
     col_idx = existing_suppliers.get(company_name, next_avail_col)
     if col_idx == next_avail_col:
         next_avail_col += COLUMNS_PER_SUPPLIER
+
     batch_requests = [
         {
             "range": f"{get_column_letter(col_idx)}{COMPANY_NAME_ROW}",
@@ -330,52 +333,41 @@ def update_google_sheet_for_single_file(ws, data):
 
     populated_rows = set()
     for item in matched_items:
-        item_name = item["name"]
+        item_name = item.get("name", "")
         for existing in existing_products:
             if existing["name"] == item_name and existing["row"] not in populated_rows:
                 batch_requests.append(
                     {
                         "range": f"{get_column_letter(col_idx)}{existing['row']}:{get_column_letter(col_idx+COLUMNS_PER_SUPPLIER-1)}{existing['row']}",
-                        "values": [
-                            [
-                                item.get("quantity", 1),
-                                item.get("unit", "ชิ้น"),
-                                item.get("pricePerUnit", 0),
-                                item.get("totalPrice", 0),
-                            ]
-                        ],
+                        "values": [[
+                            item.get("quantity", 1),
+                            item.get("unit", "ชิ้น"),
+                            item.get("pricePerUnit", 0),
+                            item.get("totalPrice", 0),
+                        ]],
                     }
                 )
                 populated_rows.add(existing["row"])
                 break
 
+    # New products to append before summary rows (if any)
     new_products = []
     for item in unique_items:
-        if isinstance(item, dict) and "name" in item and "quantity" in item:
+        if isinstance(item, dict) and "name" in item:
             item["name"] = clean_product_name(item["name"])
-
-            if not any(
-                existing["name"] == item["name"] for existing in existing_products
-            ):
+            if not any(existing["name"] == item["name"] for existing in existing_products):
                 new_products.append(item)
 
-    insertion_row = (
-        first_summary_row
-        if first_summary_row > 0
-        else (start_row + len(existing_products))
-    )
+    insertion_row = first_summary_row if first_summary_row > 0 else (start_row + len(existing_products))
 
     if new_products:
-        new_rows = []
-        for _ in range(len(new_products)):
-            new_rows.append([""] * ws.col_count)
-
+        new_rows = [[""] * ws.col_count for _ in range(len(new_products))]
         if new_rows:
             ws.insert_rows(new_rows, insertion_row)
 
         row_shift = len(new_products)
         if first_summary_row > 0:
-            for label in summary_row_map:
+            for label in list(summary_row_map.keys()):
                 summary_row_map[label] += row_shift
 
         for i, product in enumerate(new_products):
@@ -386,18 +378,15 @@ def update_google_sheet_for_single_file(ws, data):
                     "values": [[product.get("name", "Unknown Product")]],
                 }
             )
-
             batch_requests.append(
                 {
                     "range": f"{get_column_letter(col_idx)}{row}:{get_column_letter(col_idx+COLUMNS_PER_SUPPLIER-1)}{row}",
-                    "values": [
-                        [
-                            product.get("quantity", 1),
-                            product.get("unit", "ชิ้น"),
-                            product.get("pricePerUnit", 0),
-                            product.get("totalPrice", 0),
-                        ]
-                    ],
+                    "values": [[
+                        product.get("quantity", 1),
+                        product.get("unit", "ชิ้น"),
+                        product.get("pricePerUnit", 0),
+                        product.get("totalPrice", 0),
+                    ]],
                 }
             )
 
@@ -448,25 +437,28 @@ def update_google_sheet_with_multiple_files(ws, all_json_data):
     start_row = HEADER_ROW + 1
     sheet_values = ws.get_all_values()
     existing_products = []
-    matched_product_rows = set()
 
+    # Exclude summary labels from product list
     for row_idx, row in enumerate(sheet_values[HEADER_ROW:], start=start_row):
         if len(row) >= ITEM_MASTER_LIST_COL and row[ITEM_MASTER_LIST_COL - 1].strip():
-            product_name = clean_product_name(row[ITEM_MASTER_LIST_COL - 1].strip())
-            existing_products.append({"name": product_name, "row": row_idx})
+            cell_value = row[ITEM_MASTER_LIST_COL - 1].strip()
+            if cell_value not in SUMMARY_LABELS:
+                product_name = clean_product_name(cell_value)
+                existing_products.append({"name": product_name, "row": row_idx})
 
+    # Identify existing suppliers (columns in 4-col groups starting at C)
     existing_suppliers = {}
+    header_row_values = sheet_values[COMPANY_NAME_ROW - 1] if sheet_values else []
     for col_idx in range(
-        ITEM_MASTER_LIST_COL,
-        len(sheet_values[0]) if sheet_values else 0,
+        ITEM_MASTER_LIST_COL + 1,
+        len(header_row_values) + 1,
         COLUMNS_PER_SUPPLIER,
     ):
-        if COMPANY_NAME_ROW - 1 < len(sheet_values) and col_idx < len(
-            sheet_values[COMPANY_NAME_ROW - 1]
-        ):
-            supplier_name = sheet_values[COMPANY_NAME_ROW - 1][col_idx].strip()
-            if supplier_name:
-                existing_suppliers[supplier_name] = col_idx
+        supplier_name = ""
+        if (col_idx - 1) < len(header_row_values):
+            supplier_name = header_row_values[col_idx - 1].strip()
+        if supplier_name:
+            existing_suppliers[supplier_name] = col_idx
 
     next_avail_col = find_next_available_column(ws)
 
@@ -480,7 +472,6 @@ def update_google_sheet_with_multiple_files(ws, all_json_data):
                 product["name"] = clean_product_name(product["name"])
 
         company_name = data.get("company", "Unknown Company")
-
         col_idx = existing_suppliers.get(company_name, next_avail_col)
         if col_idx == next_avail_col:
             next_avail_col += COLUMNS_PER_SUPPLIER
@@ -508,45 +499,35 @@ def update_google_sheet_with_multiple_files(ws, all_json_data):
         populated_rows = set()
 
         for item in matched_items:
-            item_name = item["name"]
+            item_name = item.get("name", "")
             for existing in existing_products:
-                if (
-                    existing["name"] == item_name
-                    and existing["row"] not in populated_rows
-                ):
+                if existing["name"] == item_name and existing["row"] not in populated_rows:
                     batch_requests.append(
                         {
                             "range": f"{get_column_letter(col_idx)}{existing['row']}:{get_column_letter(col_idx+COLUMNS_PER_SUPPLIER-1)}{existing['row']}",
-                            "values": [
-                                [
-                                    item.get("quantity", 1),
-                                    item.get("unit", "ชิ้น"),
-                                    item.get("pricePerUnit", 0),
-                                    item.get("totalPrice", 0),
-                                ]
-                            ],
+                            "values": [[
+                                item.get("quantity", 1),
+                                item.get("unit", "ชิ้น"),
+                                item.get("pricePerUnit", 0),
+                                item.get("totalPrice", 0),
+                            ]],
                         }
                     )
                     populated_rows.add(existing["row"])
                     break
 
+        # Add new unique products at the end of the current list
         new_products = []
         for item in unique_items:
-            if isinstance(item, dict) and "name" in item and "quantity" in item:
+            if isinstance(item, dict) and "name" in item:
                 item["name"] = clean_product_name(item["name"])
-
-                if not any(
-                    existing["name"] == item["name"] for existing in existing_products
-                ):
+                if not any(existing["name"] == item["name"] for existing in existing_products):
                     new_products.append(item)
 
         next_row = start_row + len(existing_products)
 
         if new_products:
-            new_rows = []
-            for _ in range(len(new_products)):
-                new_rows.append([""] * ws.col_count)
-
+            new_rows = [[""] * ws.col_count for _ in range(len(new_products))]
             if new_rows:
                 ws.insert_rows(new_rows, next_row)
 
@@ -558,25 +539,20 @@ def update_google_sheet_with_multiple_files(ws, all_json_data):
                         "values": [[product.get("name", "Unknown Product")]],
                     }
                 )
-
                 batch_requests.append(
                     {
                         "range": f"{get_column_letter(col_idx)}{row}:{get_column_letter(col_idx+COLUMNS_PER_SUPPLIER-1)}{row}",
-                        "values": [
-                            [
-                                product.get("quantity", 1),
-                                product.get("unit", "ชิ้น"),
-                                product.get("pricePerUnit", 0),
-                                product.get("totalPrice", 0),
-                            ]
-                        ],
+                        "values": [[
+                            product.get("quantity", 1),
+                            product.get("unit", "ชิ้น"),
+                            product.get("pricePerUnit", 0),
+                            product.get("totalPrice", 0),
+                        ]],
                     }
                 )
+                existing_products.append({"name": product.get("name", "Unknown Product"), "row": row})
 
-                existing_products.append(
-                    {"name": product.get("name", "Unknown Product"), "row": row}
-                )
-
+        # Append summary for this supplier
         summary_row = start_row + len(existing_products) + 2
         summary_items = [
             ("รวมเป็นเงิน", data.get("totalPrice", 0)),
@@ -591,29 +567,22 @@ def update_google_sheet_with_multiple_files(ws, all_json_data):
         for i, (label, value) in enumerate(summary_items):
             row = summary_row + i
             batch_requests.append(
-                {
-                    "range": f"{get_column_letter(ITEM_MASTER_LIST_COL)}{row}",
-                    "values": [[label]],
-                }
+                {"range": f"{get_column_letter(ITEM_MASTER_LIST_COL)}{row}", "values": [[label]]}
             )
             batch_requests.append(
-                {
-                    "range": f"{get_column_letter(col_idx+COLUMNS_PER_SUPPLIER-1)}{row}",
-                    "values": [[value]],
-                }
+                {"range": f"{get_column_letter(col_idx+COLUMNS_PER_SUPPLIER-1)}{row}", "values": [[value]]}
             )
 
         if batch_requests:
             ws.batch_update(batch_requests, value_input_option="USER_ENTERED")
 
-        if col_idx not in existing_suppliers.values():
+        if company_name not in existing_suppliers:
             existing_suppliers[company_name] = col_idx
 
     return len(all_json_data)
 
 def get_file_type(file_path):
     mime_type, _ = mimetypes.guess_type(file_path)
-
     if mime_type:
         if mime_type.startswith("image/"):
             return "image"
@@ -624,57 +593,87 @@ def get_file_type(file_path):
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         ]:
             return "word"
-
     ext = os.path.splitext(file_path)[1].lower()
-    if ext in [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".gif"]:
+    if ext in [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".gif", ".webp"]:
         return "image"
     elif ext == ".pdf":
         return "pdf"
     elif ext in [".doc", ".docx"]:
         return "word"
-
     return "unknown"
+
+def _wait_for_file_active(uploaded_file, timeout=180, poll=1.0):
+    start = time.time()
+    name = getattr(uploaded_file, "name", None)
+    if not name:
+        return uploaded_file
+    while time.time() - start < timeout:
+        try:
+            f2 = genai.get_file(name)
+            state = getattr(f2, "state", None)
+            if state == "ACTIVE":
+                return f2
+            time.sleep(poll)
+        except Exception:
+            time.sleep(poll)
+    return uploaded_file  # best effort
 
 def process_file(file_path):
     file_type = get_file_type(file_path)
-    tmp = tempfile.NamedTemporaryFile(
-        delete=False, suffix=os.path.splitext(file_path)[1]
-    )
-    with open(file_path, "rb") as src:
-        tmp.write(src.read())
-    tmp.close()
-    f = genai.upload_file(path=tmp.name, display_name=os.path.basename(file_path))
-    if file_type == "image":
-        model = genai.GenerativeModel(
-            model_name="gemini-2.5-pro",
-            generation_config={"temperature": 0.1, "top_p": 0.95},
-        )
-        resp = model.generate_content([image_prompt, f])
-    else:
-        model = genai.GenerativeModel(
-            model_name="gemini-2.5-pro",
-            generation_config={"temperature": 0.1, "top_p": 0.95},
-        )
-        resp = model.generate_content([prompt, f])
-    d = extract_json_from_text(resp.text)
-    if not d or not d.get("products"):
-        model_pro = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
-            generation_config={"temperature": 0.1, "top_p": 0.95},
-        )
-        resp_pro = model_pro.generate_content(
-            [prompt if file_type != "image" else image_prompt, f]
-        )
-        d = extract_json_from_text(resp_pro.text)
-    d = validate_json_data(d) if d else None
-    d = enhance_with_gemini(d) if d else None
-    os.unlink(tmp.name)
-    return d
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file_path)[1])
+    try:
+        with open(file_path, "rb") as src:
+            tmp.write(src.read())
+        tmp.close()
+        f = genai.upload_file(path=tmp.name, display_name=os.path.basename(file_path))
+        f = _wait_for_file_active(f)
+
+        if file_type == "image":
+            model = genai.GenerativeModel(
+                model_name="gemini-2.5-pro",
+                generation_config={"temperature": 0.1, "top_p": 0.95},
+            )
+            resp = model.generate_content([image_prompt, f])
+        else:
+            model = genai.GenerativeModel(
+                model_name="gemini-2.5-pro",
+                generation_config={"temperature": 0.1, "top_p": 0.95},
+            )
+            resp = model.generate_content([prompt, f])
+
+        d = extract_json_from_text(getattr(resp, "text", "") or "")
+
+        if not d or not d.get("products"):
+            model_pro = genai.GenerativeModel(
+                model_name="gemini-2.5-flash",
+                generation_config={"temperature": 0.1, "top_p": 0.95},
+            )
+            resp_pro = model_pro.generate_content([prompt if file_type != "image" else image_prompt, f])
+            d = extract_json_from_text(getattr(resp_pro, "text", "") or "")
+
+        d = validate_json_data(d) if d else None
+        d = enhance_with_gemini(d) if d else None
+        return d
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+        try:
+            # Clean up uploaded file in Gemini
+            if 'f' in locals() and getattr(f, "name", None):
+                genai.delete_file(f.name)
+        except Exception:
+            pass
 
 def process_files(file_paths, sheet_id=DEFAULT_SHEET_ID):
     data_list = []
     for p in file_paths:
-        d = process_file(p)
+        try:
+            d = process_file(p)
+        except Exception as e:
+            st.error(f"ประมวลผลไฟล์ล้มเหลว: {os.path.basename(p)} - {e}")
+            d = None
         if d:
             data_list.append(d)
     if data_list:
@@ -995,66 +994,127 @@ Return ONLY a valid JSON object with no explanations.
 """
 
 matching_prompt = """
-You are a product matching expert specializing in construction materials in Thailand.
+You are a meticulous data architect specializing in product ontology for construction and home appliance materials. Your primary mission is to analyze product lists from different suppliers, establish a single "canonical" master product name for each item, and then map all supplier variations to that canonical name.
+Your logic must be hierarchical and rule-based. Follow this algorithm precisely.
 
-## TASK
-Match products from a target list (new quotation) to a reference list (master product list) based on their attributes, materials, dimensions, and specifications.
+### **Core Objective: Create and Match to a Canonical Name**
 
-## CRITICAL MATCHING RULES
-1. Focus on the meaning and specifications, not just text similarity
-2. Consider materials, dimensions, thickness, and product type as key matching factors
-3. Each reference product can only be matched ONCE (never match the same reference item to multiple target items)
-4. If a product cannot be matched with high confidence (>70%), leave it unmatched
+The "Canonical Name" is the single source of truth for a product. You must construct it using this strict format:
+**`[Group] - [Normalized Product Type] - [Primary Model/Identifier/Size]`**
 
-## UNIT CONVERSION AWARENESS
-Pay special attention to dimensions and units:
-- Convert between mm, cm, and m when comparing dimensions (1m = 100cm = 1000mm)
-- Match items with similar dimensions even if units differ (e.g., "4672x970 mm" and "4.672x0.97 m" are the same)
-- Consider products like "ราวกันตกฝังปูน" with similar specifications as potential matches even if dimensions vary slightly
+- **`[Group]`**: The project phase or room size (e.g., "1BR+2BR(57-70sqm.)", "2BR (90sqm.)"). This is the **highest-priority** matching key.
+- **`[Normalized Product Type]`**: The generic category of the product (e.g., "Hood", "Induction Hob", "Sink"). You must deduce this from various descriptions, focusing on meaning equivalence rather than exact words.
+- **`[Primary Model/Identifier/Size]`**: Use the most specific model number, or if models differ, focus on physical specification, especially **size/dimension (กว้าง x ยาว x สูง, หนา, ลึก, บาง)** and material/installation description, as these are the most reliable matchers.
 
-## INPUT
-- Target Products: New products from a quotation that need to be matched
-- Reference Products: Existing master list of products to match against
+---
 
-## MATCHING CRITERIA (in priority order)
-1. Material type match (e.g., glass with glass, steel with steel)
-2. Dimensions match (within 5% tolerance, after unit conversion)
-3. Thickness match (within 5% tolerance, after unit conversion)
-4. Product type/category match
+### **Mandatory 4-Step Matching Algorithm**
 
-## Material Type Examples
-- Glass: กระจก, glass, tempered, เทมเปอร์
-- Steel: เหล็ก, steel, galvanized, ชุบสังกะสี
-- Aluminum: อลูมิเนียม, aluminum, aluminium
-- Wood: ไม้, wood, timber, plywood
+For every product you process, follow these steps in order:
 
-## OUTPUT FORMAT
-Return a JSON object with these properties:
+#### **Step 1: Group Matching (Non-Negotiable Filter)**
+- This is the most critical step. Products can **ONLY** be considered a match if they belong to the **exact same `[Group]`**.
+- Example: A "Hood" from "1BR+2BR(57-70sqm.)" can **NEVER** match a "Hood" from "2BR (90sqm.)".
+- Recognize semantic equivalents for groups, e.g., "1 BEDROOM" = "1BR+2BR(57-70sqm.)".
+
+#### **Step 2: Product Type Semantic Normalization**
+- After filtering by group, identify the core product type, even if the description wording is different.
+- Normalize different supplier descriptions into one standard type, using keyword mapping, synonyms, and most importantly **meaning equivalence**.
+- Example mapping:
+    - **"Hood"**: `Slimline Hood`, `BI telescopic hood`, `HOOD PIAVE 60 XS`
+    - **"Induction Hob"**: `Induction Hob`, `Hob Electric`, `HOB INDUCTION`
+    - **"Microwave"**: `Built-in Microwave`, `Microwave Oven`, `MICROWAVE FMWO 25 NH I`
+    - **"Sink"**: `Undermount Sink`, `Sink Stainless Steel`, `SINK BXX 210-45`
+    - **"Tap"**: `Sink Single Tap`, `Tap`, `TAP LANNAR`
+- If two descriptions refer to the same function or usage, treat them as the same type.
+
+#### **Step 3: Specification, Material & Size Matching**
+- If models differ, **focus on whether the descriptions, size/dimension, and material indicate the same or equivalent product**.
+    - If size/dimension (e.g., กว้าง, ยาว, สูง, หนา, ลึก, บาง) are nearly identical (within ±5%) **and** the context and product type match, consider as matched.
+    - If model numbers are different but all other descriptors (function, material, size) confirm same intended use, treat as match.
+    - Material or installation description (e.g., "รางอลูมิเนียมสำเร็จรูป" vs "เหล็กตัวยูฝังพื้น" vs "กระจกเทมเปอร์ 10 มม." vs "กระจกเทมเปอร์ 12 มม.") can be considered matching **if** they serve the same purpose and are nearly equivalent by standard in the industry.
+    - Always use physical specification (size/dimension) as the most precise identifier when possible.
+- **Size/Dims** ("กว้าง", "ยาว", "สูง", "หนา", "ลึก", "บาง", etc.) are the most important identifiers for matching, more than model number.
+
+#### **Step 4: Construct Final Output**
+- Based on matches, generate the final JSON output:
+
 {{
   "matchedItems": [
     {{
-      "name": "reference product name",
-      "quantity": target quantity,
-      "unit": target unit,
-      "pricePerUnit": target price per unit,
-      "totalPrice": target total price
+      "name": "The canonical reference name this product matched to.",
+      "quantity": "target quantity",
+      "unit": "target unit",
+      "pricePerUnit": "target price per unit",
+      "totalPrice": "target total price"
     }}
   ],
   "uniqueItems": [
     {{
-      "name": "target product name",
-      "quantity": target quantity,
-      "unit": target unit,
-      "pricePerUnit": target price per unit,
-      "totalPrice": target total price
+      "name": "The full, descriptive name of the target product that could not be matched.",
+      "quantity": "target quantity",
+      "unit": "target unit",
+      "pricePerUnit": "target price per unit",
+      "totalPrice": "target total price"
     }}
   ]
 }}
 
-Where:
-- matchedItems: Array of products that found a match in the reference list
-  - Use the reference product name, but the target's quantity, unit, and prices
-- uniqueItems: Array of target products that couldn't be matched plus any unused reference products
+### **Critical Rules & Constraints**
+
+1. **Group is King:** If the group doesn't match, nothing else matters.
+2. **Semantic Type and Size/Material over Model:** A strong match on `Group` + `Normalized Product Type` + nearly equivalent size/material is more important than model number.
+3. **One-to-One Mapping:** A reference item (canonical name you create) can only be matched once per supplier list.
+4. **No Imagination:** Only use information explicitly present in the data. If you cannot confidently normalize a product type, classify it as unique.
+
+### **Walkthrough Example: Matching "Hoods"**
+
+**Goal:** Match the first item from all three suppliers.
+
+1. **Teka:**
+    - **Input:** Group=`1BR+2BR(57-70sqm.)`, Model=`EL 60`, Desc=`Slimline Hood`
+    - **Analysis:** Group is "1BR...". Type normalizes from "Slimline Hood" to **"Hood"**. Model is `EL 60`.
+    - **Canonical Name Created:** `1BR+2BR(57-70sqm.) - Hood - EL 60`
+
+2. **Hisense (Gorenje):**
+    - **Input:** Group=`1BR+2BR (57-70Sqm.)`, Product=`TH62E3X`, Desc=`BI telescopic hood...`
+    - **Analysis:** Group is "1BR...". It matches Teka's group. Type normalizes from "BI telescopic hood" to **"Hood"**. It matches the normalized type.
+    - **Conclusion:** This is a match for the same row.
+
+3. **Franke:**
+    - **Input:** Group=`1 BEDROOM`, Product Category=`Hood`, Mode=`PIAVE 60 XS`
+    - **Analysis:** Group "1 BEDROOM" is semantically identical to "1BR...". It matches. Type is explicitly `Hood`. It matches.
+    - **Conclusion:** This is also a match for the same row.
+
+All three products are mapped to the canonical name `1BR+2BR(57-70sqm.) - Hood - EL 60`, and their respective data will be aligned on this single row in the final output.
+
+---
+
+## Input & Output Format
+
+- **Input:** `target_products` (from a new quotation) and `reference_products` (the existing master list of canonical names).
+- **Output:** You **MUST** return a JSON object with this exact structure:
+
+{{
+  "matchedItems": [
+    {{
+      "name": "The canonical reference name this product matched to.",
+      "quantity": "target quantity",
+      "unit": "target unit",
+      "pricePerUnit": "target price per unit",
+      "totalPrice": "target total price"
+    }}
+  ],
+  "uniqueItems": [
+    {{
+      "name": "The full, descriptive name of the target product that could not be matched.",
+      "quantity": "target quantity",
+      "unit": "target unit",
+      "pricePerUnit": "target price per unit",
+      "totalPrice": "target total price"
+    }}
+  ]
+}}
 
 ## Target Products:
 {target_products}
@@ -1141,7 +1201,10 @@ def main():
                 results = process_files(file_paths, sheet_id)
                 
                 for path in file_paths:
-                    os.unlink(path)
+                    try:
+                        os.unlink(path)
+                    except Exception:
+                        pass
 
             progress_bar.markdown(
                 """
