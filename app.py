@@ -1,3 +1,4 @@
+import concurrent.futures
 import os
 import json
 import tempfile
@@ -597,66 +598,70 @@ def _wait_for_file_active(uploaded_file, timeout=180, poll=1.0):
     return uploaded_file
 
 def process_file(file_path):
+    file_name = os.path.basename(file_path)
+    with open(file_path, "rb") as src:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file_name)[1]) as tmp_file:
+            tmp_file.write(src.read())
+            tmp_file_path = tmp_file.name
+
+    uploaded_gemini_file = genai.upload_file(path=tmp_file_path, display_name=file_name)
+    uploaded_gemini_file = _wait_for_file_active(uploaded_gemini_file)
+
     file_type = get_file_type(file_path)
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file_path)[1])
-    try:
-        with open(file_path, "rb") as src:
-            tmp.write(src.read())
-        tmp.close()
-        f = genai.upload_file(path=tmp.name, display_name=os.path.basename(file_path))
-        f = _wait_for_file_active(f)
+    prompt_to_use = image_prompt if file_type == "image" else prompt
 
-        if file_type == "image":
-            model = genai.GenerativeModel(
-                model_name="gemini-2.5-pro",
-                generation_config={"temperature": 0.1, "top_p": 0.95},
-            )
-            resp = model.generate_content([image_prompt, f])
-        else:
-            model = genai.GenerativeModel(
-                model_name="gemini-2.5-pro",
-                generation_config={"temperature": 0.1, "top_p": 0.95},
-            )
-            resp = model.generate_content([prompt, f])
+    model_flash = genai.GenerativeModel(model_name="gemini-2.5-flash", generation_config={"temperature": 0.1, "top_p": 0.95})
+    resp = model_flash.generate_content([prompt_to_use, uploaded_gemini_file])
+    d = extract_json_from_text(getattr(resp, "text", "") or "")
 
-        d = extract_json_from_text(getattr(resp, "text", "") or "")
+    if not d or not d.get("products"):
+        model_pro = genai.GenerativeModel(model_name="gemini-2.5-pro", generation_config={"temperature": 0.1, "top_p": 0.95})
+        resp_pro = model_pro.generate_content([prompt_to_use, uploaded_gemini_file])
+        d = extract_json_from_text(getattr(resp_pro, "text", "") or "")
 
-        if not d or not d.get("products"):
-            model_pro = genai.GenerativeModel(
-                model_name="gemini-2.5-flash",
-                generation_config={"temperature": 0.1, "top_p": 0.95},
-            )
-            resp_pro = model_pro.generate_content([prompt if file_type != "image" else image_prompt, f])
-            d = extract_json_from_text(getattr(resp_pro, "text", "") or "")
+    d = validate_json_data(d) if d else None
+    d = enhance_with_gemini(d) if d else None
 
-        d = validate_json_data(d) if d else None
-        d = enhance_with_gemini(d) if d else None
-        return d
-    finally:
-        try:
-            os.unlink(tmp.name)
-        except Exception:
-            pass
-        try:
-            if 'f' in locals() and getattr(f, "name", None):
-                genai.delete_file(f.name)
-        except Exception:
-            pass
+    if d:
+        result = {"file_name": file_name, "data": d}
+    else:
+        result = {"file_name": file_name, "error": "Failed to extract structured data from the document after multiple attempts."}
+
+    if tmp_file_path and os.path.exists(tmp_file_path):
+        os.unlink(tmp_file_path)
+    if uploaded_gemini_file and getattr(uploaded_gemini_file, "name", None):
+        genai.delete_file(uploaded_gemini_file.name)
+    return result
 
 def process_files(file_paths, sheet_id=DEFAULT_SHEET_ID):
     data_list = []
-    for p in file_paths:
-        try:
-            d = process_file(p)
-        except Exception as e:
-            st.error(f"ประมวลผลไฟล์ล้มเหลว: {os.path.basename(p)} - {e}")
-            d = None
-        if d:
-            data_list.append(d)
+    error_list = []
+    total_files = len(file_paths)
+    with st.status(f"Processing {total_files} files...", expanded=True) as status:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(total_files, 10)) as executor:
+            future_to_file = {executor.submit(process_file, path): path for path in file_paths}
+            processed_count = 0
+            for future in concurrent.futures.as_completed(future_to_file):
+                processed_count += 1
+                result = future.result()
+                if "error" in result and result["error"]:
+                    st.warning(f"⚠️ Failed to process {result['file_name']}: {result['error']}")
+                    error_list.append(result)
+                else:
+                    st.write(f"✓ Successfully processed {result['file_name']}")
+                    data_list.append(result["data"])
+                status.progress(processed_count / total_files, text=f"Processed {processed_count}/{total_files} files")
+
     if data_list:
+        status.update(label="Updating Google Sheet...", state="running")
         ws = authenticate_and_open_sheet(sheet_id)
         update_google_sheet_with_multiple_files(ws, data_list)
-    return data_list
+        status.update(label="Processing complete!", state="complete", expanded=False)
+    elif not error_list:
+        status.update(label="No data could be extracted from the files.", state="complete")
+    else:
+        status.update(label="Processing finished with errors.", state="error", expanded=True)
+    return data_list, error_list
 
 def process_pdfs(pdf_paths, sheet_id=DEFAULT_SHEET_ID):
     return process_files(pdf_paths, sheet_id)
@@ -1071,7 +1076,7 @@ All three products are mapped to the canonical name `1BR+2BR(57-70sqm.) - Hood -
 
 def main():
     st.set_page_config(page_title="ระบบประมวลผลใบเสนอราคา", layout="centered")
-    st.sidebar.title("เพิ่ม API Key เพื่อเริ่มต้นใช้งาน")
+    st.sidebar.title("ตั้งค่าการเชื่อมต่อ")
     google_api_key = st.sidebar.text_input(
         "Enter your GOOGLE_API_KEY", 
         value=st.session_state.get("google_api_key", ""), 
@@ -1079,100 +1084,60 @@ def main():
         key="google_api_key_input"
     )
 
-    if st.sidebar.button("ยืนยัน", key="confirm_api_key", use_container_width=True):
+    if st.sidebar.button("ยืนยัน API Key", key="confirm_api_key", use_container_width=True):
         if google_api_key:
-            try:
-                genai.configure(api_key=google_api_key)
-                st.session_state.google_api_key = google_api_key
-                st.session_state.api_key_confirmed = True
-                st.sidebar.success("API Key ถูกบันทึกแล้ว")
-            except Exception as e:
-                st.session_state.api_key_confirmed = False
-                st.sidebar.error(f"เกิดข้อผิดพลาด: {e}")
+            genai.configure(api_key=google_api_key)
+            st.session_state.google_api_key = google_api_key
+            st.session_state.api_key_confirmed = True
+            st.sidebar.success("API Key ถูกบันทึกและใช้งานได้แล้ว")
         else:
             st.session_state.api_key_confirmed = False
-            st.sidebar.error("กรุณาใส่ API Key ก่อนยืนยัน")
+            st.sidebar.warning("กรุณาใส่ API Key ก่อนยืนยัน")
 
     st.markdown("<h1 style='text-align: center;'>ระบบประมวลผลใบเสนอราคา</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center;'>อัปโหลดไฟล์ใบเสนอราคา (PDF หรือรูปภาพ) เพื่อประมวลผลและส่งข้อมูลเข้า Google Sheet</p>", unsafe_allow_html=True)
-
-    progress_bar = st.empty()
-    progress_bar.markdown(
-        """
-        <div style="display:flex; justify-content:space-around; align-items:center; margin-bottom: 2rem;">
-            <div><div style="background-color:#4285F4;color:white;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">1</div><p style="text-align:center;margin-top:5px;">เลือกไฟล์</p></div>
-            <div><div style="background-color:#E8E8E8;color:#666;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">2</div><p style="text-align:center;margin-top:5px;color:#666;">ประมวลผล</p></div>
-            <div><div style="background-color:#E8E8E8;color:#666;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">3</div><p style="text-align:center;margin-top:5px;color:#666;">ผลการประมวลผล</p></div>
-        </div>
-        """, unsafe_allow_html=True
-    )
-
-    st.subheader("อัปโหลดข้อมูล")
+    st.markdown("<p style='text-align: center;'>อัปโหลดไฟล์ใบเสนอราคา (PDF หรือรูปภาพ) เพื่อดึงข้อมูลและบันทึกลง Google Sheet โดยอัตโนมัติ</p>", unsafe_allow_html=True)
+    st.markdown("---")
+    st.subheader("ขั้นตอนที่ 1: อัปโหลดข้อมูลของคุณ")
     sheet_url = st.text_input(
         "Google Sheet URL or ID:",
         value=DEFAULT_SHEET_ID,
-        placeholder="ใส่ URL หรือ ID ของ Google Sheet"
+        placeholder="ใส่ URL หรือ ID ของ Google Sheet ที่ต้องการบันทึกข้อมูล"
     )
-    
     uploaded_files = st.file_uploader(
-        "เลือกไฟล์ PDF หรือรูปภาพ (สามารถเลือกได้หลายไฟล์)",
+        "เลือกไฟล์ PDF หรือรูปภาพ (สามารถเลือกได้หลายไฟล์พร้อมกัน)",
         type=['pdf', 'jpg', 'jpeg', 'png'],
         accept_multiple_files=True
     )
-    
     if uploaded_files:
-        if st.button("🚀 เริ่มประมวลผล", use_container_width=True):
+        if st.button("🚀 เริ่มประมวลผล", use_container_width=True, type="primary"):
             if not st.session_state.get("api_key_confirmed"):
                 st.error("❌ กรุณาใส่และยืนยัน Google API Key ในแถบด้านข้างก่อนเริ่มประมวลผล")
                 return
-
-            progress_bar.markdown(
-                """
-                <div style="display:flex; justify-content:space-around; align-items:center; margin-bottom: 2rem;">
-                    <div><div style="background-color:#4285F4;color:white;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">✓</div><p style="text-align:center;margin-top:5px;">เลือกไฟล์</p></div>
-                    <div><div style="background-color:#4285F4;color:white;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">2</div><p style="text-align:center;margin-top:5px;">ประมวลผล</p></div>
-                    <div><div style="background-color:#E8E8E8;color:#666;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">3</div><p style="text-align:center;margin-top:5px;color:#666;">ผลการประมวลผล</p></div>
-                </div>
-                """, unsafe_allow_html=True
-            )
-
-            with st.spinner('กำลังประมวลผลไฟล์...'):
-                file_paths = []
+            file_paths = []
+            with st.spinner("กำลังเตรียมไฟล์เพื่ออัปโหลด..."):
                 for uploaded_file in uploaded_files:
                     with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp_file:
                         tmp_file.write(uploaded_file.getvalue())
                         file_paths.append(tmp_file.name)
-                
-                sheet_id = extract_sheet_id_from_url(sheet_url) if sheet_url else DEFAULT_SHEET_ID
-                results = process_files(file_paths, sheet_id)
-                
-                for path in file_paths:
-                    try:
-                        os.unlink(path)
-                    except Exception:
-                        pass
-
-            progress_bar.markdown(
-                """
-                <div style="display:flex; justify-content:space-around; align-items:center; margin-bottom: 2rem;">
-                    <div><div style="background-color:#4285F4;color:white;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">✓</div><p style="text-align:center;margin-top:5px;">เลือกไฟล์</p></div>
-                    <div><div style="background-color:#4285F4;color:white;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">✓</div><p style="text-align:center;margin-top:5px;">ประมวลผล</p></div>
-                    <div><div style="background-color:#4285F4;color:white;border-radius:50%;width:40px;height:40px;text-align:center;line-height:40px;margin:0 auto;">3</div><p style="text-align:center;margin-top:5px;">ผลการประมวลผล</p></div>
-                </div>
-                """, unsafe_allow_html=True
-            )
-            
-            st.subheader("ผลการประมวลผล")
+            sheet_id = extract_sheet_id_from_url(sheet_url) if sheet_url else DEFAULT_SHEET_ID
+            results, errors = process_files(file_paths, sheet_id)
+            st.subheader("ขั้นตอนที่ 2: ผลการประมวลผล")
             if results:
-                st.success(f"✅ ประมวลผลสำเร็จ! ประมวลผลได้ {len(results)} ไฟล์ และบันทึกข้อมูลลง Google Sheet เรียบร้อยแล้ว")
+                st.success(f"✅ ประมวลผลสำเร็จ {len(results)} ไฟล์ และบันทึกข้อมูลลง Google Sheet เรียบร้อยแล้ว")
                 sheet_url_display = f"https://docs.google.com/spreadsheets/d/{sheet_id}"
-                st.markdown(f"### [เปิด Google Sheet]({sheet_url_display})")
-                
-                for i, result in enumerate(results):
-                    with st.expander(f"📄 ไฟล์ที่ {i+1}: {result.get('company', 'Unknown Company')}"):
-                        st.json(result)
-            else:
-                st.error("❌ ไม่สามารถประมวลผลไฟล์ได้ กรุณาตรวจสอบไฟล์และลองใหม่อีกครั้ง")
+                st.markdown(f"**[คลิกที่นี่เพื่อเปิด Google Sheet]({sheet_url_display})**")
+                for result_data in results:
+                    company_name = result_data.get('company', 'Unknown Company')
+                    with st.expander(f"📄 ผลลัพธ์จาก: {company_name}"):
+                        st.json(result_data)
+            if errors:
+                st.error(f"❌ พบข้อผิดพลาด {len(errors)} ไฟล์ ไม่สามารถประมวลผลได้")
+                for error_info in errors:
+                    with st.expander(f"🚨 ข้อผิดพลาดในไฟล์: {error_info['file_name']}"):
+                        st.write(f"**สาเหตุ:**")
+                        st.code(error_info['error'], language=None)
+            if not results and not errors:
+                st.warning("ไม่สามารถประมวลผลไฟล์ใดๆ ได้ กรุณาตรวจสอบไฟล์และลองใหม่อีกครั้ง")
 
 if __name__ == "__main__":
     main()
