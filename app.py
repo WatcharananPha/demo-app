@@ -1,5 +1,4 @@
 import concurrent.futures
-import uuid
 import os
 import json
 import tempfile
@@ -88,17 +87,6 @@ def extract_contact_info(text):
         contact_parts.append(f"Phone: {', '.join(phones)}")
     return ", ".join(contact_parts)
 
-def sanitize_filename_for_upload(file_name: str) -> str:
-    if not file_name:
-        return f"upload_{uuid.uuid4().hex}.file"
-    base_name, extension = os.path.splitext(file_name)
-    safe_base_name = re.sub(r'[^a-zA-Z0-9._-]', '_', base_name)
-    safe_base_name = re.sub(r'__+', '_', safe_base_name)
-    safe_base_name = safe_base_name.strip('_')
-    if not safe_base_name:
-        safe_base_name = f"file_{uuid.uuid4().hex}"
-    return f"{safe_base_name}{extension}"
-
 def clean_product_name(name):
     if not name:
         return "Unknown Product"
@@ -184,27 +172,31 @@ def validate_json_data(json_data):
 
     return json_data
 
-def enhance_with_gemini(json_data: dict, prompt_template: str):
+def enhance_with_gemini(json_data):
     if not json_data:
         return None
-    validation_formatted = prompt_template.format(
+    validation_formatted = validation_prompt.format(
         extracted_json=json.dumps(json_data, ensure_ascii=False)
     )
     model = genai.GenerativeModel(model_name="gemini-2.5-flash")
-    response = model.generate_content(validation_formatted)
-    enhanced_text = (response.text or "").strip()
+    try:
+        response = model.generate_content(validation_formatted)
+        enhanced_text = (response.text or "").strip()
+    except Exception:
+        return json_data
+
     enhanced = extract_json_from_text(enhanced_text) or json_data
     if not isinstance(enhanced, dict):
         return json_data
     return enhanced
 
-def match_products_with_gemini(target_products: list, reference_products: list, prompt_template: str):
-    fallback_result = {"matchedItems": [], "uniqueItems": target_products}
+def match_products_with_gemini(target_products, reference_products):
     if not target_products:
         return {"matchedItems": [], "uniqueItems": []}
     if not reference_products:
-        return fallback_result
-    match_prompt_formatted = prompt_template.format(
+        return {"matchedItems": [], "uniqueItems": target_products}
+
+    match_prompt_formatted = matching_prompt.format(
         target_products=json.dumps(target_products, ensure_ascii=False),
         reference_products=json.dumps(reference_products, ensure_ascii=False),
     )
@@ -212,11 +204,19 @@ def match_products_with_gemini(target_products: list, reference_products: list, 
         model_name="gemini-2.5-pro",
         generation_config={"temperature": 0.1, "top_p": 0.95},
     )
-    response = model.generate_content(match_prompt_formatted)
-    match_text = (response.text or "").strip()
+    try:
+        response = model.generate_content(match_prompt_formatted)
+        match_text = (response.text or "").strip()
+    except Exception:
+        return {"matchedItems": [], "uniqueItems": target_products}
+
     match_data = extract_json_from_text(match_text)
-    if not isinstance(match_data, dict) or "matchedItems" not in match_data or "uniqueItems" not in match_data:
-        return fallback_result
+    if not match_data:
+        return {"matchedItems": [], "uniqueItems": target_products}
+    if "matchedItems" not in match_data:
+        match_data["matchedItems"] = []
+    if "uniqueItems" not in match_data:
+        match_data["uniqueItems"] = target_products
     return match_data
 
 def authenticate_and_open_sheet(sheet_id):
@@ -311,7 +311,7 @@ def update_google_sheet_for_single_file(ws, data):
     ]
 
     reference_data = [{"name": item["name"]} for item in existing_products]
-    match_results = match_products_with_gemini(products, reference_data, matching_prompt)
+    match_results = match_products_with_gemini(products, reference_data)
     matched_items = match_results["matchedItems"]
     unique_items = match_results["uniqueItems"]
 
@@ -473,7 +473,7 @@ def update_google_sheet_with_multiple_files(ws, all_json_data):
         ]
 
         reference_data = [{"name": item["name"]} for item in existing_products]
-        match_results = match_products_with_gemini(products, reference_data, matching_prompt)
+        match_results = match_products_with_gemini(products, reference_data)
         matched_items = match_results["matchedItems"]
         unique_items = match_results["uniqueItems"]
 
@@ -598,30 +598,35 @@ def _wait_for_file_active(uploaded_file, timeout=180, poll=1.0):
     return uploaded_file
 
 def process_file(file_path):
-    original_file_name = os.path.basename(file_path)
-    safe_display_name = sanitize_filename_for_upload(original_file_name)
+    file_name = os.path.basename(file_path)
     with open(file_path, "rb") as src:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(original_file_name)[1]) as tmp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file_name)[1]) as tmp_file:
             tmp_file.write(src.read())
             tmp_file_path = tmp_file.name
-    uploaded_gemini_file = genai.upload_file(path=tmp_file_path, display_name=safe_display_name)
+
+    uploaded_gemini_file = genai.upload_file(path=tmp_file_path, display_name=file_name)
     uploaded_gemini_file = _wait_for_file_active(uploaded_gemini_file)
+
     file_type = get_file_type(file_path)
     prompt_to_use = image_prompt if file_type == "image" else prompt
+
     model_flash = genai.GenerativeModel(model_name="gemini-2.5-flash", generation_config={"temperature": 0.1, "top_p": 0.95})
     resp = model_flash.generate_content([prompt_to_use, uploaded_gemini_file])
     d = extract_json_from_text(getattr(resp, "text", "") or "")
+
     if not d or not d.get("products"):
-        st.info(f"Retrying with Pro model for {original_file_name}...")
         model_pro = genai.GenerativeModel(model_name="gemini-2.5-pro", generation_config={"temperature": 0.1, "top_p": 0.95})
         resp_pro = model_pro.generate_content([prompt_to_use, uploaded_gemini_file])
         d = extract_json_from_text(getattr(resp_pro, "text", "") or "")
+
     d = validate_json_data(d) if d else None
-    d = enhance_with_gemini(d, validation_prompt) if d else None
+    d = enhance_with_gemini(d) if d else None
+
     if d:
-        result = {"file_name": original_file_name, "data": d}
+        result = {"file_name": file_name, "data": d}
     else:
-        result = {"file_name": original_file_name, "error": "Failed to extract structured data from the document after multiple attempts."}
+        result = {"file_name": file_name, "error": "Failed to extract structured data from the document after multiple attempts."}
+
     if tmp_file_path and os.path.exists(tmp_file_path):
         os.unlink(tmp_file_path)
     if uploaded_gemini_file and getattr(uploaded_gemini_file, "name", None):
