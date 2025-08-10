@@ -1,4 +1,5 @@
 import concurrent.futures
+import uuid
 import os
 import json
 import tempfile
@@ -86,6 +87,17 @@ def extract_contact_info(text):
     if phones:
         contact_parts.append(f"Phone: {', '.join(phones)}")
     return ", ".join(contact_parts)
+
+def sanitize_filename_for_upload(file_name: str) -> str:
+    if not file_name:
+        return f"upload_{uuid.uuid4().hex}.file"
+    base_name, extension = os.path.splitext(file_name)
+    safe_base_name = re.sub(r'[^a-zA-Z0-9._-]', '_', base_name)
+    safe_base_name = re.sub(r'__+', '_', safe_base_name)
+    safe_base_name = safe_base_name.strip('_')
+    if not safe_base_name:
+        safe_base_name = f"file_{uuid.uuid4().hex}"
+    return f"{safe_base_name}{extension}"
 
 def clean_product_name(name):
     if not name:
@@ -598,35 +610,30 @@ def _wait_for_file_active(uploaded_file, timeout=180, poll=1.0):
     return uploaded_file
 
 def process_file(file_path):
-    file_name = os.path.basename(file_path)
+    original_file_name = os.path.basename(file_path)
+    safe_display_name = sanitize_filename_for_upload(original_file_name)
     with open(file_path, "rb") as src:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file_name)[1]) as tmp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(original_file_name)[1]) as tmp_file:
             tmp_file.write(src.read())
             tmp_file_path = tmp_file.name
-
-    uploaded_gemini_file = genai.upload_file(path=tmp_file_path, display_name=file_name)
+    uploaded_gemini_file = genai.upload_file(path=tmp_file_path, display_name=safe_display_name)
     uploaded_gemini_file = _wait_for_file_active(uploaded_gemini_file)
-
     file_type = get_file_type(file_path)
     prompt_to_use = image_prompt if file_type == "image" else prompt
-
     model_flash = genai.GenerativeModel(model_name="gemini-2.5-flash", generation_config={"temperature": 0.1, "top_p": 0.95})
     resp = model_flash.generate_content([prompt_to_use, uploaded_gemini_file])
     d = extract_json_from_text(getattr(resp, "text", "") or "")
-
     if not d or not d.get("products"):
+        st.info(f"Retrying with Pro model for {original_file_name}...")
         model_pro = genai.GenerativeModel(model_name="gemini-2.5-pro", generation_config={"temperature": 0.1, "top_p": 0.95})
         resp_pro = model_pro.generate_content([prompt_to_use, uploaded_gemini_file])
         d = extract_json_from_text(getattr(resp_pro, "text", "") or "")
-
     d = validate_json_data(d) if d else None
-    d = enhance_with_gemini(d) if d else None
-
+    d = enhance_with_gemini(d, validation_prompt) if d else None
     if d:
-        result = {"file_name": file_name, "data": d}
+        result = {"file_name": original_file_name, "data": d}
     else:
-        result = {"file_name": file_name, "error": "Failed to extract structured data from the document after multiple attempts."}
-
+        result = {"file_name": original_file_name, "error": "Failed to extract structured data from the document after multiple attempts."}
     if tmp_file_path and os.path.exists(tmp_file_path):
         os.unlink(tmp_file_path)
     if uploaded_gemini_file and getattr(uploaded_gemini_file, "name", None):
