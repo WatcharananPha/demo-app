@@ -22,8 +22,8 @@ DEFAULT_SHEET_ID = "17tMHStXQYXaIQHQIA4jdUyHaYt_tuoNCEEuJCstWEuw"
 COMPANY_NAME_ROW = 1
 CONTACT_INFO_ROW = 2
 HEADER_ROW = 3
-ITEM_MASTER_LIST_COL = 2  # Column B
-COLUMNS_PER_SUPPLIER = 4  # quantity, unit, pricePerUnit, totalPrice
+ITEM_MASTER_LIST_COL = 2
+COLUMNS_PER_SUPPLIER = 4
 
 SUMMARY_LABELS = [
     "รวมเป็นเงิน",
@@ -46,19 +46,16 @@ def extract_sheet_id_from_url(url):
 def extract_json_from_text(text):
     if not text:
         return None
-    # Prefer code block JSON if present
     blocks = re.findall(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", text)
     if blocks:
         candidates = blocks
     else:
-        # Fallback: first to last brace
         start = text.find("{")
         end = text.rfind("}") + 1
         candidates = [text[start:end]] if start >= 0 and end > start else []
 
     for cand in candidates:
         json_str = cand
-        # Remove trailing commas before } or ]
         cleaned_json = re.sub(r",\s*}", "}", json_str)
         cleaned_json = re.sub(r",\s*]", "]", cleaned_json)
         try:
@@ -75,7 +72,6 @@ def extract_contact_info(text):
     phone_matches = re.findall(phone_pattern, text)
     email_matches = re.findall(email_pattern, text)
     phone_numbers = [m[0] for m in phone_matches] if phone_matches else []
-    # Deduplicate and normalize
     emails = sorted(set(email_matches))
     phones = []
     for phone in phone_numbers:
@@ -93,7 +89,6 @@ def extract_contact_info(text):
 def clean_product_name(name):
     if not name:
         return "Unknown Product"
-    # Remove leading numbering like "1. ", "2) ", "3 - "
     return re.sub(r"^\s*\d+[\.\)\-]\s*", "", name.strip())
 
 def _to_number_or_default(val, default):
@@ -124,7 +119,6 @@ def validate_json_data(json_data):
     if not json_data.get("company"):
         json_data["company"] = "Unknown Company"
 
-    # Normalize contact
     if "contact" in json_data:
         if isinstance(json_data["contact"], dict):
             contact_parts = []
@@ -138,13 +132,11 @@ def validate_json_data(json_data):
     else:
         json_data["contact"] = ""
 
-    # Ensure vat present and boolean
     if "vat" not in json_data:
         json_data["vat"] = False
     else:
         json_data["vat"] = bool(json_data["vat"])
 
-    # Normalize products
     if not json_data.get("products"):
         json_data["products"] = []
     for product in json_data.get("products", []):
@@ -154,14 +146,12 @@ def validate_json_data(json_data):
             product["quantity"] = 1
         product["unit"] = product.get("unit") or "ชิ้น"
         product["pricePerUnit"] = _to_number_or_default(product.get("pricePerUnit", 0), 0)
-        # totalPrice: use provided numeric if valid else compute
         provided_total = _to_number_or_default(product.get("totalPrice", None), None)
         if provided_total is None:
             product["totalPrice"] = round(product["quantity"] * product["pricePerUnit"], 2)
         else:
             product["totalPrice"] = provided_total
 
-    # Totals
     computed_total = sum(p.get("totalPrice", 0) for p in json_data.get("products", []))
     json_data["totalPrice"] = _to_number_or_default(json_data.get("totalPrice", computed_total), computed_total)
     json_data["totalVat"] = _to_number_or_default(json_data.get("totalVat", round(json_data["totalPrice"] * 0.07, 2)), round(json_data["totalPrice"] * 0.07, 2))
@@ -170,7 +160,6 @@ def validate_json_data(json_data):
         round(json_data["totalPrice"] + json_data["totalVat"], 2),
     )
 
-    # Other fields
     if "priceGuaranteeDay" not in json_data:
         json_data["priceGuaranteeDay"] = 0
     if "deliveryTime" not in json_data:
@@ -236,14 +225,13 @@ def authenticate_and_open_sheet(sheet_id):
 
 def ensure_first_three_rows_exist(ws):
     p = []
-    # Ensure at least two columns exist
     for i in range(1, 4):
         p.append({"range": f"A{i}:B{i}", "values": [["", ""]]})
     ws.batch_update(p, value_input_option="USER_ENTERED")
 
 def _last_non_empty_col_in_top_rows(ws):
     vals = ws.get_all_values()
-    last = ITEM_MASTER_LIST_COL  # at least B
+    last = ITEM_MASTER_LIST_COL
     for row in vals[:HEADER_ROW]:
         for i, c in enumerate(row, start=1):
             if str(c).strip():
@@ -251,14 +239,11 @@ def _last_non_empty_col_in_top_rows(ws):
     return last
 
 def find_next_available_column(ws):
-    # Suppliers should start at ITEM_MASTER_LIST_COL + 1 (i.e., column C),
-    # and occupy 4 columns per supplier.
-    start_col = ITEM_MASTER_LIST_COL + 1  # C
+    start_col = ITEM_MASTER_LIST_COL + 1
     last_used = _last_non_empty_col_in_top_rows(ws)
     if last_used < start_col:
         return start_col
-    # Snap to next 4-col group
-    offset = last_used - start_col + 1  # how many cols used from start
+    offset = last_used - start_col + 1
     groups_used = (offset + COLUMNS_PER_SUPPLIER - 1) // COLUMNS_PER_SUPPLIER
     return start_col + groups_used * COLUMNS_PER_SUPPLIER
 
@@ -270,7 +255,6 @@ def update_google_sheet_for_single_file(ws, data):
     summary_row_map = {}
     first_summary_row = -1
 
-    # Collect existing products and detect existing summary rows
     for row_idx, row in enumerate(sheet_values[HEADER_ROW:], start=start_row):
         if len(row) >= ITEM_MASTER_LIST_COL and row[ITEM_MASTER_LIST_COL - 1].strip():
             cell_value = row[ITEM_MASTER_LIST_COL - 1].strip()
@@ -282,7 +266,6 @@ def update_google_sheet_for_single_file(ws, data):
                 product_name = clean_product_name(cell_value)
                 existing_products.append({"name": product_name, "row": row_idx})
 
-    # Existing suppliers by company name; supplier columns live in 4-col groups starting at C
     existing_suppliers = {}
     header_row_values = sheet_values[COMPANY_NAME_ROW - 1] if sheet_values else []
     for col_idx in range(
@@ -350,7 +333,6 @@ def update_google_sheet_for_single_file(ws, data):
                 populated_rows.add(existing["row"])
                 break
 
-    # New products to append before summary rows (if any)
     new_products = []
     for item in unique_items:
         if isinstance(item, dict) and "name" in item:
@@ -438,7 +420,6 @@ def update_google_sheet_with_multiple_files(ws, all_json_data):
     sheet_values = ws.get_all_values()
     existing_products = []
 
-    # Exclude summary labels from product list
     for row_idx, row in enumerate(sheet_values[HEADER_ROW:], start=start_row):
         if len(row) >= ITEM_MASTER_LIST_COL and row[ITEM_MASTER_LIST_COL - 1].strip():
             cell_value = row[ITEM_MASTER_LIST_COL - 1].strip()
@@ -446,7 +427,6 @@ def update_google_sheet_with_multiple_files(ws, all_json_data):
                 product_name = clean_product_name(cell_value)
                 existing_products.append({"name": product_name, "row": row_idx})
 
-    # Identify existing suppliers (columns in 4-col groups starting at C)
     existing_suppliers = {}
     header_row_values = sheet_values[COMPANY_NAME_ROW - 1] if sheet_values else []
     for col_idx in range(
@@ -516,7 +496,6 @@ def update_google_sheet_with_multiple_files(ws, all_json_data):
                     populated_rows.add(existing["row"])
                     break
 
-        # Add new unique products at the end of the current list
         new_products = []
         for item in unique_items:
             if isinstance(item, dict) and "name" in item:
@@ -552,7 +531,6 @@ def update_google_sheet_with_multiple_files(ws, all_json_data):
                 )
                 existing_products.append({"name": product.get("name", "Unknown Product"), "row": row})
 
-        # Append summary for this supplier
         summary_row = start_row + len(existing_products) + 2
         summary_items = [
             ("รวมเป็นเงิน", data.get("totalPrice", 0)),
@@ -616,7 +594,7 @@ def _wait_for_file_active(uploaded_file, timeout=180, poll=1.0):
             time.sleep(poll)
         except Exception:
             time.sleep(poll)
-    return uploaded_file  # best effort
+    return uploaded_file
 
 def process_file(file_path):
     file_type = get_file_type(file_path)
@@ -660,7 +638,6 @@ def process_file(file_path):
         except Exception:
             pass
         try:
-            # Clean up uploaded file in Gemini
             if 'f' in locals() and getattr(f, "name", None):
                 genai.delete_file(f.name)
         except Exception:
@@ -1000,100 +977,69 @@ Your logic must be hierarchical and rule-based. Follow this algorithm precisely.
 ### **Core Objective: Create and Match to a Canonical Name**
 
 The "Canonical Name" is the single source of truth for a product. You must construct it using this strict format:
-**`[Group] - [Normalized Product Type] - [Primary Model/Identifier/Size]`**
+**`[Group] - [Normalized Product Type] - [Primary Model/Identifier]`**
 
-- **`[Group]`**: The project phase or room size (e.g., "1BR+2BR(57-70sqm.)", "2BR (90sqm.)"). This is the **highest-priority** matching key.
-- **`[Normalized Product Type]`**: The generic category of the product (e.g., "Hood", "Induction Hob", "Sink"). You must deduce this from various descriptions, focusing on meaning equivalence rather than exact words.
-- **`[Primary Model/Identifier/Size]`**: Use the most specific model number, or if models differ, focus on physical specification, especially **size/dimension (กว้าง x ยาว x สูง, หนา, ลึก, บาง)** and material/installation description, as these are the most reliable matchers.
-
----
+-   **`[Group]`**: The project phase or room size (e.g., "1BR+2BR(57-70sqm.)", "2BR (90sqm.)"). This is the **highest-priority** matching key.
+-   **`[Normalized Product Type]`**: The generic category of the product (e.g., "Hood", "Induction Hob", "Sink"). You must deduce this from various descriptions.
+-   **`[Primary Model/Identifier]`**: The most specific model number available (e.g., "EL 60", "MWE 255 FI").
 
 ### **Mandatory 4-Step Matching Algorithm**
 
-For every product you process, follow these steps in order:
+For every product you process, you must follow these steps in order:
 
 #### **Step 1: Group Matching (Non-Negotiable Filter)**
-- This is the most critical step. Products can **ONLY** be considered a match if they belong to the **exact same `[Group]`**.
-- Example: A "Hood" from "1BR+2BR(57-70sqm.)" can **NEVER** match a "Hood" from "2BR (90sqm.)".
-- Recognize semantic equivalents for groups, e.g., "1 BEDROOM" = "1BR+2BR(57-70sqm.)".
+-   This is the most critical step. Products can **ONLY** be considered a match if they belong to the **exact same `[Group]`**.
+-   Example: A "Hood" from "1BR+2BR(57-70sqm.)" can **NEVER** match a "Hood" from "2BR (90sqm.)". They are distinct line items.
+-   Recognize semantic equivalents for groups, e.g., "1 BEDROOM" is the same as "1BR+2BR(57-70sqm.)".
 
-#### **Step 2: Product Type Semantic Normalization**
-- After filtering by group, identify the core product type, even if the description wording is different.
-- Normalize different supplier descriptions into one standard type, using keyword mapping, synonyms, and most importantly **meaning equivalence**.
-- Example mapping:
-    - **"Hood"**: `Slimline Hood`, `BI telescopic hood`, `HOOD PIAVE 60 XS`
-    - **"Induction Hob"**: `Induction Hob`, `Hob Electric`, `HOB INDUCTION`
-    - **"Microwave"**: `Built-in Microwave`, `Microwave Oven`, `MICROWAVE FMWO 25 NH I`
-    - **"Sink"**: `Undermount Sink`, `Sink Stainless Steel`, `SINK BXX 210-45`
-    - **"Tap"**: `Sink Single Tap`, `Tap`, `TAP LANNAR`
-- If two descriptions refer to the same function or usage, treat them as the same type.
+#### **Step 2: Product Type Normalization & Keyword Mapping**
+-   After filtering by group, identify the core product type. You must normalize different supplier descriptions into one standard type.
+-   Use this keyword map as your guide:
+    -   **"Hood"**: `Slimline Hood`, `BI telescopic hood`, `HOOD PIAVE 60 XS`
+    -   **"Induction Hob"**: `Induction Hob`, `Hob Electric`, `HOB INDUCTION`
+    -   **"Microwave"**: `Built-in Microwave`, `Microwave Oven`, `MICROWAVE FMWO 25 NH I`
+    -   **"Sink"**: `Undermount Sink`, `Sink Stainless Steel`, `SINK BXX 210-45`
+    -   **"Tap"**: `Sink Single Tap`, `Tap`, `TAP LANNAR`
 
-#### **Step 3: Specification, Material & Size Matching**
-- If models differ, **focus on whether the descriptions, size/dimension, and material indicate the same or equivalent product**.
-    - If size/dimension (e.g., กว้าง, ยาว, สูง, หนา, ลึก, บาง) are nearly identical (within ±5%) **and** the context and product type match, consider as matched.
-    - If model numbers are different but all other descriptors (function, material, size) confirm same intended use, treat as match.
-    - Material or installation description (e.g., "รางอลูมิเนียมสำเร็จรูป" vs "เหล็กตัวยูฝังพื้น" vs "กระจกเทมเปอร์ 10 มม." vs "กระจกเทมเปอร์ 12 มม.") can be considered matching **if** they serve the same purpose and are nearly equivalent by standard in the industry.
-    - Always use physical specification (size/dimension) as the most precise identifier when possible.
-- **Size/Dims** ("กว้าง", "ยาว", "สูง", "หนา", "ลึก", "บาง", etc.) are the most important identifiers for matching, more than model number.
+#### **Step 3: Specification & Model Analysis**
+-   Once Group and Normalized Type match, use the model number and other specifications (`Model`, `Description` columns) to create the full canonical name and to confirm the match.
+-   The model number itself does not have to be identical between suppliers if the Group and Normalized Type are a clear match. The model number's purpose is to create the *unique canonical name* for that row.
 
 #### **Step 4: Construct Final Output**
-- Based on matches, generate the final JSON output:
-
-{{
-  "matchedItems": [
-    {{
-      "name": "The canonical reference name this product matched to.",
-      "quantity": "target quantity",
-      "unit": "target unit",
-      "pricePerUnit": "target price per unit",
-      "totalPrice": "target total price"
-    }}
-  ],
-  "uniqueItems": [
-    {{
-      "name": "The full, descriptive name of the target product that could not be matched.",
-      "quantity": "target quantity",
-      "unit": "target unit",
-      "pricePerUnit": "target price per unit",
-      "totalPrice": "target total price"
-    }}
-  ]
-}}
+-   Based on the matches found, generate the final JSON.
 
 ### **Critical Rules & Constraints**
 
-1. **Group is King:** If the group doesn't match, nothing else matters.
-2. **Semantic Type and Size/Material over Model:** A strong match on `Group` + `Normalized Product Type` + nearly equivalent size/material is more important than model number.
-3. **One-to-One Mapping:** A reference item (canonical name you create) can only be matched once per supplier list.
-4. **No Imagination:** Only use information explicitly present in the data. If you cannot confidently normalize a product type, classify it as unique.
+1.  **Group is King:** If the group doesn't match, nothing else matters.
+2.  **Type over Model:** A strong match on `Group` + `Normalized Product Type` is more important than a weak match on `Model` number.
+3.  **One-to-One Mapping:** A reference item (a canonical name you create) can only be matched once per supplier list.
+4.  **No Imagination:** Only use information explicitly present in the data. If you cannot confidently normalize a product type, classify it as unique.
 
 ### **Walkthrough Example: Matching "Hoods"**
 
 **Goal:** Match the first item from all three suppliers.
 
-1. **Teka:**
-    - **Input:** Group=`1BR+2BR(57-70sqm.)`, Model=`EL 60`, Desc=`Slimline Hood`
-    - **Analysis:** Group is "1BR...". Type normalizes from "Slimline Hood" to **"Hood"**. Model is `EL 60`.
-    - **Canonical Name Created:** `1BR+2BR(57-70sqm.) - Hood - EL 60`
+1.  **Teka:**
+    -   **Input:** Group=`1BR+2BR(57-70sqm.)`, Model=`EL 60`, Desc=`Slimline Hood`
+    -   **Analysis:** Group is "1BR...". Type normalizes from "Slimline Hood" to **"Hood"**. Model is `EL 60`.
+    -   **Canonical Name Created:** `1BR+2BR(57-70sqm.) - Hood - EL 60`
 
-2. **Hisense (Gorenje):**
-    - **Input:** Group=`1BR+2BR (57-70Sqm.)`, Product=`TH62E3X`, Desc=`BI telescopic hood...`
-    - **Analysis:** Group is "1BR...". It matches Teka's group. Type normalizes from "BI telescopic hood" to **"Hood"**. It matches the normalized type.
-    - **Conclusion:** This is a match for the same row.
+2.  **Hisense (Gorenje):**
+    -   **Input:** Group=`1BR+2BR (57-70Sqm.)`, Product=`TH62E3X`, Desc=`BI telescopic hood...`
+    -   **Analysis:** Group is "1BR...". It matches Teka's group. Type normalizes from "BI telescopic hood" to **"Hood"**. It matches the normalized type.
+    -   **Conclusion:** This is a match for the same row.
 
-3. **Franke:**
-    - **Input:** Group=`1 BEDROOM`, Product Category=`Hood`, Mode=`PIAVE 60 XS`
-    - **Analysis:** Group "1 BEDROOM" is semantically identical to "1BR...". It matches. Type is explicitly `Hood`. It matches.
-    - **Conclusion:** This is also a match for the same row.
+3.  **Franke:**
+    -   **Input:** Group=`1 BEDROOM`, Product Category=`Hood`, Mode=`PIAVE 60 XS`
+    -   **Analysis:** Group "1 BEDROOM" is semantically identical to "1BR...". It matches. Type is explicitly `Hood`. It matches.
+    -   **Conclusion:** This is also a match for the same row.
 
 All three products are mapped to the canonical name `1BR+2BR(57-70sqm.) - Hood - EL 60`, and their respective data will be aligned on this single row in the final output.
 
----
+### **Input & Output Format**
 
-## Input & Output Format
-
-- **Input:** `target_products` (from a new quotation) and `reference_products` (the existing master list of canonical names).
-- **Output:** You **MUST** return a JSON object with this exact structure:
+-   **Input:** `target_products` (from a new quotation) and `reference_products` (the existing master list of canonical names).
+-   **Output:** You **MUST** return a JSON object with this exact structure:
 
 {{
   "matchedItems": [
