@@ -184,31 +184,27 @@ def validate_json_data(json_data):
 
     return json_data
 
-def enhance_with_gemini(json_data):
+def enhance_with_gemini(json_data: dict, prompt_template: str):
     if not json_data:
         return None
-    validation_formatted = validation_prompt.format(
+    validation_formatted = prompt_template.format(
         extracted_json=json.dumps(json_data, ensure_ascii=False)
     )
     model = genai.GenerativeModel(model_name="gemini-2.5-flash")
-    try:
-        response = model.generate_content(validation_formatted)
-        enhanced_text = (response.text or "").strip()
-    except Exception:
-        return json_data
-
+    response = model.generate_content(validation_formatted)
+    enhanced_text = (response.text or "").strip()
     enhanced = extract_json_from_text(enhanced_text) or json_data
     if not isinstance(enhanced, dict):
         return json_data
     return enhanced
 
-def match_products_with_gemini(target_products, reference_products):
+def match_products_with_gemini(target_products: list, reference_products: list, prompt_template: str):
+    fallback_result = {"matchedItems": [], "uniqueItems": target_products}
     if not target_products:
         return {"matchedItems": [], "uniqueItems": []}
     if not reference_products:
-        return {"matchedItems": [], "uniqueItems": target_products}
-
-    match_prompt_formatted = matching_prompt.format(
+        return fallback_result
+    match_prompt_formatted = prompt_template.format(
         target_products=json.dumps(target_products, ensure_ascii=False),
         reference_products=json.dumps(reference_products, ensure_ascii=False),
     )
@@ -216,19 +212,11 @@ def match_products_with_gemini(target_products, reference_products):
         model_name="gemini-2.5-pro",
         generation_config={"temperature": 0.1, "top_p": 0.95},
     )
-    try:
-        response = model.generate_content(match_prompt_formatted)
-        match_text = (response.text or "").strip()
-    except Exception:
-        return {"matchedItems": [], "uniqueItems": target_products}
-
+    response = model.generate_content(match_prompt_formatted)
+    match_text = (response.text or "").strip()
     match_data = extract_json_from_text(match_text)
-    if not match_data:
-        return {"matchedItems": [], "uniqueItems": target_products}
-    if "matchedItems" not in match_data:
-        match_data["matchedItems"] = []
-    if "uniqueItems" not in match_data:
-        match_data["uniqueItems"] = target_products
+    if not isinstance(match_data, dict) or "matchedItems" not in match_data or "uniqueItems" not in match_data:
+        return fallback_result
     return match_data
 
 def authenticate_and_open_sheet(sheet_id):
@@ -323,7 +311,7 @@ def update_google_sheet_for_single_file(ws, data):
     ]
 
     reference_data = [{"name": item["name"]} for item in existing_products]
-    match_results = match_products_with_gemini(products, reference_data)
+    match_results = match_products_with_gemini(products, reference_data, matching_prompt)
     matched_items = match_results["matchedItems"]
     unique_items = match_results["uniqueItems"]
 
@@ -485,7 +473,7 @@ def update_google_sheet_with_multiple_files(ws, all_json_data):
         ]
 
         reference_data = [{"name": item["name"]} for item in existing_products]
-        match_results = match_products_with_gemini(products, reference_data)
+        match_results = match_products_with_gemini(products, reference_data, matching_prompt)
         matched_items = match_results["matchedItems"]
         unique_items = match_results["uniqueItems"]
 
