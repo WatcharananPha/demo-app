@@ -986,7 +986,7 @@ The "Canonical Name" is the single source of truth for a product. You must const
 
 -   **`[Group]`**: The project phase or room size (e.g., "1BR+2BR(57-70sqm.)", "2BR (90sqm.)"). This is the **highest-priority** matching key.
 -   **`[Normalized Product Type]`**: The generic category of the product (e.g., "Hood", "Induction Hob", "Sink"). You must deduce this from various descriptions.
--   **`[Primary Model/Identifier]`**: The most specific model number available (e.g., "EL 60", "MWE 255 FI"). If none exists for construction assemblies, use key specs instead in the canonical name.
+-   **`[Primary Model/Identifier]`**: The most specific model number available (e.g., "EL 60", "MWE 255 FI").
 
 ### **Mandatory 4-Step Matching Algorithm**
 
@@ -996,10 +996,9 @@ For every product you process, you must follow these steps in order:
 -   This is the most critical step. Products can **ONLY** be considered a match if they belong to the **exact same `[Group]`**.
 -   Example: A "Hood" from "1BR+2BR(57-70sqm.)" can **NEVER** match a "Hood" from "2BR (90sqm.)". They are distinct line items.
 -   Recognize semantic equivalents for groups, e.g., "1 BEDROOM" is the same as "1BR+2BR(57-70sqm.)".
--   Construction override: If the so-called "group" looks like a location/position (e.g., ตำแหน่ง, ชั้นลอย, ระเบียง, ห้องนอน, UNIT, พื้นที่, บริเวณ), do not use it as a strict gate. In that case, proceed with spec-based matching (see Construction Rules below).
 
 #### **Step 2: Product Type Normalization & Keyword Mapping**
--   After filtering by group (or after applying the construction override), identify the core product type. Normalize supplier descriptions into one standard type.
+-   After filtering by group, identify the core product type. You must normalize different supplier descriptions into one standard type.
 -   Use this keyword map as your guide:
     -   **"Hood"**: `Slimline Hood`, `BI telescopic hood`, `HOOD PIAVE 60 XS`
     -   **"Induction Hob"**: `Induction Hob`, `Hob Electric`, `HOB INDUCTION`
@@ -1008,8 +1007,8 @@ For every product you process, you must follow these steps in order:
     -   **"Tap"**: `Sink Single Tap`, `Tap`, `TAP LANNAR`
 
 #### **Step 3: Specification & Model Analysis**
--   Once Group and Normalized Type match (or construction override applies), use model/specs (Model, Description) to confirm the match and to create the canonical name.
--   The model number itself does not have to be identical between suppliers if Group and Normalized Type are a clear match. For construction assemblies without models, use key specs (material/glass type, thickness, normalized dimensions).
+-   Once Group and Normalized Type match, use the model number and other specifications (`Model`, `Description` columns) to create the full canonical name and to confirm the match.
+-   The model number itself does not have to be identical between suppliers if the Group and Normalized Type are a clear match. The model number's purpose is to create the *unique canonical name* for that row.
 
 #### **Step 4: Construct Final Output**
 -   Based on the matches found, generate the final JSON.
@@ -1020,32 +1019,6 @@ For every product you process, you must follow these steps in order:
 2.  **Type over Model:** A strong match on `Group` + `Normalized Product Type` is more important than a weak match on `Model` number.
 3.  **One-to-One Mapping:** A reference item (a canonical name you create) can only be matched once per supplier list.
 4.  **No Imagination:** Only use information explicitly present in the data. If you cannot confidently normalize a product type, classify it as unique.
-
-### **Construction Rules: Thai guardrails/balustrades/glass assemblies**
-
-Apply these when items are construction assemblies (e.g., ราวกันตก/กันตก/บานกระจก/โครงเหล็ก):
-
-- Ignore location/position tokens for grouping: `ตำแหน่ง`, `ชั้นลอย`, `ระเบียง`, `ห้องนอน`, `UNIT`, `บริเวณ`, `โซน`, `ชั้น`. These must NOT prevent a match.
-- Normalize synonyms:
-  - Guardrail/Balustrade: `ราวกันตก`, `กันตก`, `ราวกันตกฝังปูน`, `Balustrade`, `Guardrail`
-  - Glass: `กระจกใส`, `ใส`, `Clear`
-  - Tempered: `เทมเปอร์`, `Tempered`, `Toughened`
-  - Channel/Profile: `รางเหล็ก U`, `U-Channel`, `U Channel`
-- Thickness equivalence: `10 mm` == `10 มม.` == `หนา 10 มม.`
-- Dimension normalization:
-  - Convert units and format to meters: `693x970 mm` -> `0.693x0.970 m`; `69 cm x 97 cm` -> `0.69x0.97 m`
-  - Recognize separators `x`, `×`, `X`, and optional spaces.
-  - Tolerance: consider two dimensions equal if each side differs by ≤ 0.05 m (5 cm) OR by ≤ 2% relative error.
-- Ignore non-differentiating notes like adhesives/sealants (`ยาแนว`, `Silicone`) and parentheticals like `(ไม่คิดขอบกันตก)` unless they are the sole differentiator.
-- Matching decision for construction assemblies:
-  - If Normalized Type matches (guardrail/balustrade), thickness matches, and normalized dimensions are within tolerance, treat as the same item even if locations differ.
-- Canonical naming for construction assemblies (when no model):
-  - Use: `[Normalized Product Type] - [Key Spec: Tempered/Clear/Thickness] - [Normalized Dimensions in m]` and append profile if available, e.g. `- U-Channel`.
-
-Example that MUST match:
-- A: "งานราวกันตกฝังปูน ตำแหน่ง ชั้นลอย - ... - กระจก Clear Tempered 10 mm., ... ขนาด 693x970 mm"
-- B: "ราวกันตก ระเบียงห้องนอน UNIT 1 - รางเหล็ก U ... - ใส เทมเปอร์ 10 มม. ขนาด 0.69 x 0.97 ม."
-- Both normalize to the same construction assembly and should be matched.
 
 ### **Walkthrough Example: Matching "Hoods"**
 
@@ -1093,10 +1066,6 @@ All three products are mapped to the canonical name `1BR+2BR(57-70sqm.) - Hood -
     }}
   ]
 }}
-
-Additional output constraints:
-- For each object in `matchedItems`, the `name` MUST be an exact string taken from one of `reference_products[].name`.
-- For each object in `uniqueItems`, the `name` MUST be the full descriptive name taken from the target product that could not be matched.
 
 ## Target Products:
 {target_products}
