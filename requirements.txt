@@ -13,3 +13,4 @@ pydantic
 uvicorn[standard]
 gunicorn
 openpyxl
+streamlit

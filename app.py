@@ -1019,6 +1019,11 @@ For every product you process, you must follow these steps in order:
 2.  **Type over Model:** A strong match on `Group` + `Normalized Product Type` is more important than a weak match on `Model` number.
 3.  **One-to-One Mapping:** A reference item (a canonical name you create) can only be matched once per supplier list.
 4.  **No Imagination:** Only use information explicitly present in the data. If you cannot confidently normalize a product type, classify it as unique.
+5.  **Adaptive Matching Strategy:** You must first decide which matching mode to use based on the data.
+    *   **Step A: Assess Similarity.** First, quickly analyze the `target_products` against the `reference_products`. Do they appear to be for the same project? Look for a strong overlap in `[Group]` and `[Normalized Product Type]` keywords across the lists.
+    *   **Step B: Choose Matching Mode.**
+        *   **If Similarity is HIGH:** Activate **"High-Confidence Mode"**. This means you assume the lists are for the same items. Your goal is to match **over 90%** of the products. Be more assertive in matching items that share the same `Group` and `Normalized Product Type`, even if model numbers or minor descriptive details differ. Only classify an item as `unique` if it is clearly a completely different product type or belongs to a group that cannot be semantically matched.
+        *   **If Similarity is LOW:** The lists are likely for different projects. Activate **"Standard Conservative Mode"**. Adhere strictly to the original, more cautious matching logic where specific details and model numbers carry significant weight. Do not attempt to force-match items to meet a percentage target. Your priority is accuracy over match quantity.
 
 ### **Walkthrough Example: Matching "Hoods"**
 
@@ -1031,15 +1036,13 @@ For every product you process, you must follow these steps in order:
 
 2.  **Hisense (Gorenje):**
     -   **Input:** Group=`1BR+2BR (57-70Sqm.)`, Product=`TH62E3X`, Desc=`BI telescopic hood...`
-    -   **Analysis:** Group is "1BR...". It matches Teka's group. Type normalizes from "BI telescopic hood" to **"Hood"**. It matches the normalized type.
-    -   **Conclusion:** This is a match for the same row.
+    -   **Analysis:** (AI assesses high similarity with Teka's list). Activates High-Confidence Mode. Group "1BR..." matches. Type "BI telescopic hood" normalizes to "Hood" and matches. This is a confident match.
 
 3.  **Franke:**
     -   **Input:** Group=`1 BEDROOM`, Product Category=`Hood`, Mode=`PIAVE 60 XS`
-    -   **Analysis:** Group "1 BEDROOM" is semantically identical to "1BR...". It matches. Type is explicitly `Hood`. It matches.
-    -   **Conclusion:** This is also a match for the same row.
+    -   **Analysis:** (AI assesses high similarity). Activates High-Confidence Mode. Group "1 BEDROOM" is semantically identical to "1BR...". It matches. Type is explicitly `Hood`. It matches. This is a confident match.
 
-All three products are mapped to the canonical name `1BR+2BR(57-70sqm.) - Hood - EL 60`, and their respective data will be aligned on this single row in the final output.
+All three products are mapped to the canonical name `1BR+2BR(57-70sqm.) - Hood - EL 60`.
 
 ### **Input & Output Format**
 
