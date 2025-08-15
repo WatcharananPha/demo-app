@@ -36,7 +36,6 @@ SUMMARY_LABELS = [
     "อื่น ๆ",
 ]
 
-
 def extract_sheet_id_from_url(url):
     if not url:
         return None
@@ -44,7 +43,6 @@ def extract_sheet_id_from_url(url):
         return url
     m = re.search(r"spreadsheets/d/([a-zA-Z0-9-_]+)", url)
     return m.group(1) if m else None
-
 
 def extract_json_from_text(text):
     if not text:
@@ -66,7 +64,6 @@ def extract_json_from_text(text):
         except json.JSONDecodeError:
             continue
     return None
-
 
 def extract_contact_info(text):
     if not text:
@@ -90,12 +87,10 @@ def extract_contact_info(text):
         contact_parts.append(f"Phone: {', '.join(phones)}")
     return ", ".join(contact_parts)
 
-
 def clean_product_name(name):
     if not name:
         return "Unknown Product"
     return re.sub(r"^\s*\d+[\.\)\-]\s*", "", name.strip())
-
 
 def _to_number_or_default(val, default):
     s = str(val)
@@ -106,7 +101,6 @@ def _to_number_or_default(val, default):
         except Exception:
             return default
     return default
-
 
 def validate_json_data(json_data):
     if not json_data:
@@ -152,30 +146,18 @@ def validate_json_data(json_data):
         if product["quantity"] <= 0:
             product["quantity"] = 1
         product["unit"] = product.get("unit") or "ชิ้น"
-        product["pricePerUnit"] = _to_number_or_default(
-            product.get("pricePerUnit", 0), 0
-        )
+        product["pricePerUnit"] = _to_number_or_default(product.get("pricePerUnit", 0), 0)
         provided_total = _to_number_or_default(product.get("totalPrice", None), None)
         if provided_total is None:
-            product["totalPrice"] = round(
-                product["quantity"] * product["pricePerUnit"], 2
-            )
+            product["totalPrice"] = round(product["quantity"] * product["pricePerUnit"], 2)
         else:
             product["totalPrice"] = provided_total
 
     computed_total = sum(p.get("totalPrice", 0) for p in json_data.get("products", []))
-    json_data["totalPrice"] = _to_number_or_default(
-        json_data.get("totalPrice", computed_total), computed_total
-    )
-    json_data["totalVat"] = _to_number_or_default(
-        json_data.get("totalVat", round(json_data["totalPrice"] * 0.07, 2)),
-        round(json_data["totalPrice"] * 0.07, 2),
-    )
+    json_data["totalPrice"] = _to_number_or_default(json_data.get("totalPrice", computed_total), computed_total)
+    json_data["totalVat"] = _to_number_or_default(json_data.get("totalVat", round(json_data["totalPrice"] * 0.07, 2)), round(json_data["totalPrice"] * 0.07, 2))
     json_data["totalPriceIncludeVat"] = _to_number_or_default(
-        json_data.get(
-            "totalPriceIncludeVat",
-            round(json_data["totalPrice"] + json_data["totalVat"], 2),
-        ),
+        json_data.get("totalPriceIncludeVat", round(json_data["totalPrice"] + json_data["totalVat"], 2)),
         round(json_data["totalPrice"] + json_data["totalVat"], 2),
     )
 
@@ -189,7 +171,6 @@ def validate_json_data(json_data):
         json_data["otherNotes"] = ""
 
     return json_data
-
 
 def enhance_with_gemini(json_data):
     if not json_data:
@@ -208,7 +189,6 @@ def enhance_with_gemini(json_data):
     if not isinstance(enhanced, dict):
         return json_data
     return enhanced
-
 
 def match_products_with_gemini(target_products, reference_products):
     if not target_products:
@@ -239,21 +219,16 @@ def match_products_with_gemini(target_products, reference_products):
         match_data["uniqueItems"] = target_products
     return match_data
 
-
 def authenticate_and_open_sheet(sheet_id):
-    creds = Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"], scopes=SCOPES
-    )
+    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=SCOPES)
     client = gspread.authorize(creds)
     return client.open_by_key(sheet_id).get_worksheet(0)
-
 
 def ensure_first_three_rows_exist(ws):
     p = []
     for i in range(1, 4):
         p.append({"range": f"A{i}:B{i}", "values": [["", ""]]})
     ws.batch_update(p, value_input_option="USER_ENTERED")
-
 
 def _last_non_empty_col_in_top_rows(ws):
     vals = ws.get_all_values()
@@ -264,7 +239,6 @@ def _last_non_empty_col_in_top_rows(ws):
                 last = max(last, i)
     return last
 
-
 def find_next_available_column(ws):
     start_col = ITEM_MASTER_LIST_COL + 1
     last_used = _last_non_empty_col_in_top_rows(ws)
@@ -273,7 +247,6 @@ def find_next_available_column(ws):
     offset = last_used - start_col + 1
     groups_used = (offset + COLUMNS_PER_SUPPLIER - 1) // COLUMNS_PER_SUPPLIER
     return start_col + groups_used * COLUMNS_PER_SUPPLIER
-
 
 def update_google_sheet_for_single_file(ws, data):
     ensure_first_three_rows_exist(ws)
@@ -302,9 +275,7 @@ def update_google_sheet_for_single_file(ws, data):
         COLUMNS_PER_SUPPLIER,
     ):
         supplier_name = ""
-        if COMPANY_NAME_ROW - 1 < len(sheet_values) and (col_idx - 1) < len(
-            sheet_values[COMPANY_NAME_ROW - 1]
-        ):
+        if COMPANY_NAME_ROW - 1 < len(sheet_values) and (col_idx - 1) < len(sheet_values[COMPANY_NAME_ROW - 1]):
             supplier_name = sheet_values[COMPANY_NAME_ROW - 1][col_idx - 1].strip()
         if supplier_name:
             existing_suppliers[supplier_name] = col_idx
@@ -352,14 +323,12 @@ def update_google_sheet_for_single_file(ws, data):
                 batch_requests.append(
                     {
                         "range": f"{get_column_letter(col_idx)}{existing['row']}:{get_column_letter(col_idx+COLUMNS_PER_SUPPLIER-1)}{existing['row']}",
-                        "values": [
-                            [
-                                item.get("quantity", 1),
-                                item.get("unit", "ชิ้น"),
-                                item.get("pricePerUnit", 0),
-                                item.get("totalPrice", 0),
-                            ]
-                        ],
+                        "values": [[
+                            item.get("quantity", 1),
+                            item.get("unit", "ชิ้น"),
+                            item.get("pricePerUnit", 0),
+                            item.get("totalPrice", 0),
+                        ]],
                     }
                 )
                 populated_rows.add(existing["row"])
@@ -369,16 +338,10 @@ def update_google_sheet_for_single_file(ws, data):
     for item in unique_items:
         if isinstance(item, dict) and "name" in item:
             item["name"] = clean_product_name(item["name"])
-            if not any(
-                existing["name"] == item["name"] for existing in existing_products
-            ):
+            if not any(existing["name"] == item["name"] for existing in existing_products):
                 new_products.append(item)
 
-    insertion_row = (
-        first_summary_row
-        if first_summary_row > 0
-        else (start_row + len(existing_products))
-    )
+    insertion_row = first_summary_row if first_summary_row > 0 else (start_row + len(existing_products))
 
     if new_products:
         new_rows = [[""] * ws.col_count for _ in range(len(new_products))]
@@ -401,14 +364,12 @@ def update_google_sheet_for_single_file(ws, data):
             batch_requests.append(
                 {
                     "range": f"{get_column_letter(col_idx)}{row}:{get_column_letter(col_idx+COLUMNS_PER_SUPPLIER-1)}{row}",
-                    "values": [
-                        [
-                            product.get("quantity", 1),
-                            product.get("unit", "ชิ้น"),
-                            product.get("pricePerUnit", 0),
-                            product.get("totalPrice", 0),
-                        ]
-                    ],
+                    "values": [[
+                        product.get("quantity", 1),
+                        product.get("unit", "ชิ้น"),
+                        product.get("pricePerUnit", 0),
+                        product.get("totalPrice", 0),
+                    ]],
                 }
             )
 
@@ -450,7 +411,6 @@ def update_google_sheet_for_single_file(ws, data):
         ws.batch_update(batch_requests, value_input_option="USER_ENTERED")
 
     return 1
-
 
 def update_google_sheet_with_multiple_files(ws, all_json_data):
     if len(all_json_data) == 1:
@@ -522,21 +482,16 @@ def update_google_sheet_with_multiple_files(ws, all_json_data):
         for item in matched_items:
             item_name = item.get("name", "")
             for existing in existing_products:
-                if (
-                    existing["name"] == item_name
-                    and existing["row"] not in populated_rows
-                ):
+                if existing["name"] == item_name and existing["row"] not in populated_rows:
                     batch_requests.append(
                         {
                             "range": f"{get_column_letter(col_idx)}{existing['row']}:{get_column_letter(col_idx+COLUMNS_PER_SUPPLIER-1)}{existing['row']}",
-                            "values": [
-                                [
-                                    item.get("quantity", 1),
-                                    item.get("unit", "ชิ้น"),
-                                    item.get("pricePerUnit", 0),
-                                    item.get("totalPrice", 0),
-                                ]
-                            ],
+                            "values": [[
+                                item.get("quantity", 1),
+                                item.get("unit", "ชิ้น"),
+                                item.get("pricePerUnit", 0),
+                                item.get("totalPrice", 0),
+                            ]],
                         }
                     )
                     populated_rows.add(existing["row"])
@@ -546,9 +501,7 @@ def update_google_sheet_with_multiple_files(ws, all_json_data):
         for item in unique_items:
             if isinstance(item, dict) and "name" in item:
                 item["name"] = clean_product_name(item["name"])
-                if not any(
-                    existing["name"] == item["name"] for existing in existing_products
-                ):
+                if not any(existing["name"] == item["name"] for existing in existing_products):
                     new_products.append(item)
 
         next_row = start_row + len(existing_products)
@@ -569,19 +522,15 @@ def update_google_sheet_with_multiple_files(ws, all_json_data):
                 batch_requests.append(
                     {
                         "range": f"{get_column_letter(col_idx)}{row}:{get_column_letter(col_idx+COLUMNS_PER_SUPPLIER-1)}{row}",
-                        "values": [
-                            [
-                                product.get("quantity", 1),
-                                product.get("unit", "ชิ้น"),
-                                product.get("pricePerUnit", 0),
-                                product.get("totalPrice", 0),
-                            ]
-                        ],
+                        "values": [[
+                            product.get("quantity", 1),
+                            product.get("unit", "ชิ้น"),
+                            product.get("pricePerUnit", 0),
+                            product.get("totalPrice", 0),
+                        ]],
                     }
                 )
-                existing_products.append(
-                    {"name": product.get("name", "Unknown Product"), "row": row}
-                )
+                existing_products.append({"name": product.get("name", "Unknown Product"), "row": row})
 
         summary_row = start_row + len(existing_products) + 2
         summary_items = [
@@ -597,16 +546,10 @@ def update_google_sheet_with_multiple_files(ws, all_json_data):
         for i, (label, value) in enumerate(summary_items):
             row = summary_row + i
             batch_requests.append(
-                {
-                    "range": f"{get_column_letter(ITEM_MASTER_LIST_COL)}{row}",
-                    "values": [[label]],
-                }
+                {"range": f"{get_column_letter(ITEM_MASTER_LIST_COL)}{row}", "values": [[label]]}
             )
             batch_requests.append(
-                {
-                    "range": f"{get_column_letter(col_idx+COLUMNS_PER_SUPPLIER-1)}{row}",
-                    "values": [[value]],
-                }
+                {"range": f"{get_column_letter(col_idx+COLUMNS_PER_SUPPLIER-1)}{row}", "values": [[value]]}
             )
 
         if batch_requests:
@@ -616,7 +559,6 @@ def update_google_sheet_with_multiple_files(ws, all_json_data):
             existing_suppliers[company_name] = col_idx
 
     return len(all_json_data)
-
 
 def get_file_type(file_path):
     mime_type, _ = mimetypes.guess_type(file_path)
@@ -639,7 +581,6 @@ def get_file_type(file_path):
         return "word"
     return "unknown"
 
-
 def _wait_for_file_active(uploaded_file, timeout=180, poll=1.0):
     start = time.time()
     name = getattr(uploaded_file, "name", None)
@@ -656,13 +597,10 @@ def _wait_for_file_active(uploaded_file, timeout=180, poll=1.0):
             time.sleep(poll)
     return uploaded_file
 
-
 def process_file(file_path):
     file_name = os.path.basename(file_path)
     with open(file_path, "rb") as src:
-        with tempfile.NamedTemporaryFile(
-            delete=False, suffix=os.path.splitext(file_name)[1]
-        ) as tmp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file_name)[1]) as tmp_file:
             tmp_file.write(src.read())
             tmp_file_path = tmp_file.name
 
@@ -672,18 +610,12 @@ def process_file(file_path):
     file_type = get_file_type(file_path)
     prompt_to_use = image_prompt if file_type == "image" else prompt
 
-    model_flash = genai.GenerativeModel(
-        model_name="gemini-2.5-flash",
-        generation_config={"temperature": 0.1, "top_p": 0.95},
-    )
+    model_flash = genai.GenerativeModel(model_name="gemini-2.5-flash", generation_config={"temperature": 0.1, "top_p": 0.95})
     resp = model_flash.generate_content([prompt_to_use, uploaded_gemini_file])
     d = extract_json_from_text(getattr(resp, "text", "") or "")
 
     if not d or not d.get("products"):
-        model_pro = genai.GenerativeModel(
-            model_name="gemini-2.5-pro",
-            generation_config={"temperature": 0.1, "top_p": 0.95},
-        )
+        model_pro = genai.GenerativeModel(model_name="gemini-2.5-pro", generation_config={"temperature": 0.1, "top_p": 0.95})
         resp_pro = model_pro.generate_content([prompt_to_use, uploaded_gemini_file])
         d = extract_json_from_text(getattr(resp_pro, "text", "") or "")
 
@@ -693,10 +625,7 @@ def process_file(file_path):
     if d:
         result = {"file_name": file_name, "data": d}
     else:
-        result = {
-            "file_name": file_name,
-            "error": "Failed to extract structured data from the document after multiple attempts.",
-        }
+        result = {"file_name": file_name, "error": "Failed to extract structured data from the document after multiple attempts."}
 
     if tmp_file_path and os.path.exists(tmp_file_path):
         os.unlink(tmp_file_path)
@@ -704,50 +633,43 @@ def process_file(file_path):
         genai.delete_file(uploaded_gemini_file.name)
     return result
 
-
 def process_files(file_paths, sheet_id=DEFAULT_SHEET_ID):
-    data_list = []
+    data_by_index = {}
     error_list = []
     total_files = len(file_paths)
     with st.status(f"Processing {total_files} files...", expanded=True) as status:
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=min(total_files, 10)
-        ) as executor:
-            future_to_file = {
-                executor.submit(process_file, path): path for path in file_paths
-            }
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(total_files, 8)) as executor:
+            futures = {executor.submit(process_file, path): idx for idx, path in enumerate(file_paths)}
             processed_count = 0
-            for future in concurrent.futures.as_completed(future_to_file):
+            for future in concurrent.futures.as_completed(futures):
+                idx = futures[future]
                 processed_count += 1
                 result = future.result()
                 if "error" in result and result["error"]:
-                    st.warning(
-                        f"⚠️ Failed to process {result['file_name']}: {result['error']}"
-                    )
+                    st.warning(f"⚠️ Failed to process {result['file_name']}: {result['error']}")
                     error_list.append(result)
                 else:
-                    st.write(f"✓ Successfully processed {result['file_name']}")
-                    data_list.append(result["data"])
-                status.progress(
-                    processed_count / total_files,
-                    text=f"Processed {processed_count}/{total_files} files",
-                )
-
-    if data_list:
-        status.update(label="Updating Google Sheet...", state="running")
-        ws = authenticate_and_open_sheet(sheet_id)
-        update_google_sheet_with_multiple_files(ws, data_list)
+                    st.write(f"✓ Extracted {result['file_name']}")
+                    data_by_index[idx] = result
+                status.progress(processed_count / total_files, text=f"Extracted {processed_count}/{total_files} files")
+    results = []
+    if data_by_index:
+        status.update(label="Updating Google Sheet sequentially...", state="running")
+        ws = authenticate_and_open_sheet(extract_sheet_id_from_url(sheet_id) or DEFAULT_SHEET_ID)
+        for idx in range(len(file_paths)):
+            r = data_by_index.get(idx)
+            if not r or "data" not in r:
+                continue
+            st.write(f"🔁 Updating sheet with file {idx+1}/{len(file_paths)}: {r['file_name']}")
+            update_google_sheet_for_single_file(ws, r["data"])
+            results.append(r["data"])
+            time.sleep(0.4)
         status.update(label="Processing complete!", state="complete", expanded=False)
     elif not error_list:
-        status.update(
-            label="No data could be extracted from the files.", state="complete"
-        )
+        status.update(label="No data could be extracted from the files.", state="complete")
     else:
-        status.update(
-            label="Processing finished with errors.", state="error", expanded=True
-        )
-    return data_list, error_list
-
+        status.update(label="Processing finished with errors.", state="error", expanded=True)
+    return results, error_list
 
 def process_pdfs(pdf_paths, sheet_id=DEFAULT_SHEET_ID):
     return process_files(pdf_paths, sheet_id)
@@ -1105,11 +1027,6 @@ For every product you process, you must follow these steps in order:
 2.  **Type over Model:** A strong match on `Group` + `Normalized Product Type` is more important than a weak match on `Model` number.
 3.  **One-to-One Mapping:** A reference item (a canonical name you create) can only be matched once per supplier list.
 4.  **No Imagination:** Only use information explicitly present in the data. If you cannot confidently normalize a product type, classify it as unique.
-5.  **Adaptive Matching Strategy:** You must first decide which matching mode to use based on the data.
-    *   **Step A: Assess Similarity.** First, quickly analyze the `target_products` against the `reference_products`. Do they appear to be for the same project? Look for a strong overlap in `[Group]` and `[Normalized Product Type]` keywords across the lists.
-    *   **Step B: Choose Matching Mode.**
-        *   **If Similarity is HIGH:** Activate **"High-Confidence Mode"**. This means you assume the lists are for the same items. Your goal is to match **over 90%** of the products. Be more assertive in matching items that share the same `Group` and `Normalized Product Type`, even if model numbers or minor descriptive details differ. Only classify an item as `unique` if it is clearly a completely different product type or belongs to a group that cannot be semantically matched.
-        *   **If Similarity is LOW:** The lists are likely for different projects. Activate **"Standard Conservative Mode"**. Adhere strictly to the original, more cautious matching logic where specific details and model numbers carry significant weight. Do not attempt to force-match items to meet a percentage target. Your priority is accuracy over match quantity.
 
 ### **Walkthrough Example: Matching "Hoods"**
 
@@ -1122,13 +1039,15 @@ For every product you process, you must follow these steps in order:
 
 2.  **Hisense (Gorenje):**
     -   **Input:** Group=`1BR+2BR (57-70Sqm.)`, Product=`TH62E3X`, Desc=`BI telescopic hood...`
-    -   **Analysis:** (AI assesses high similarity with Teka's list). Activates High-Confidence Mode. Group "1BR..." matches. Type "BI telescopic hood" normalizes to "Hood" and matches. This is a confident match.
+    -   **Analysis:** Group is "1BR...". It matches Teka's group. Type normalizes from "BI telescopic hood" to **"Hood"**. It matches the normalized type.
+    -   **Conclusion:** This is a match for the same row.
 
 3.  **Franke:**
     -   **Input:** Group=`1 BEDROOM`, Product Category=`Hood`, Mode=`PIAVE 60 XS`
-    -   **Analysis:** (AI assesses high similarity). Activates High-Confidence Mode. Group "1 BEDROOM" is semantically identical to "1BR...". It matches. Type is explicitly `Hood`. It matches. This is a confident match.
+    -   **Analysis:** Group "1 BEDROOM" is semantically identical to "1BR...". It matches. Type is explicitly `Hood`. It matches.
+    -   **Conclusion:** This is also a match for the same row.
 
-All three products are mapped to the canonical name `1BR+2BR(57-70sqm.) - Hood - EL 60`.
+All three products are mapped to the canonical name `1BR+2BR(57-70sqm.) - Hood - EL 60`, and their respective data will be aligned on this single row in the final output.
 
 ### **Input & Output Format**
 
@@ -1163,19 +1082,18 @@ All three products are mapped to the canonical name `1BR+2BR(57-70sqm.) - Hood -
 {reference_products}
 """
 
+
 def main():
     st.set_page_config(page_title="ระบบประมวลผลใบเสนอราคา", layout="centered")
     st.sidebar.title("ตั้งค่าการเชื่อมต่อ")
     google_api_key = st.sidebar.text_input(
-        "Enter your GOOGLE_API_KEY",
-        value=st.session_state.get("google_api_key", ""),
+        "Enter your GOOGLE_API_KEY", 
+        value=st.session_state.get("google_api_key", "AIzaSyCBwfI--raXVSfVmp29P91YYSpPIfLYqe4"), 
         type="password",
-        key="google_api_key_input",
+        key="google_api_key_input"
     )
 
-    if st.sidebar.button(
-        "ยืนยัน API Key", key="confirm_api_key", use_container_width=True
-    ):
+    if st.sidebar.button("ยืนยัน API Key", key="confirm_api_key", use_container_width=True):
         if google_api_key:
             genai.configure(api_key=google_api_key)
             st.session_state.google_api_key = google_api_key
@@ -1185,25 +1103,19 @@ def main():
             st.session_state.api_key_confirmed = False
             st.sidebar.warning("กรุณาใส่ API Key ก่อนยืนยัน")
 
-    st.markdown(
-        "<h1 style='text-align: center;'>ระบบประมวลผลใบเสนอราคา</h1>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "<p style='text-align: center;'>อัปโหลดไฟล์ใบเสนอราคา (PDF หรือรูปภาพ) เพื่อดึงข้อมูลและบันทึกลง Google Sheet โดยอัตโนมัติ</p>",
-        unsafe_allow_html=True,
-    )
+    st.markdown("<h1 style='text-align: center;'>ระบบประมวลผลใบเสนอราคา</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center;'>อัปโหลดไฟล์ใบเสนอราคา (PDF หรือรูปภาพ) เพื่อดึงข้อมูลและบันทึกลง Google Sheet โดยอัตโนมัติ</p>", unsafe_allow_html=True)
     st.markdown("---")
     st.subheader("ขั้นตอนที่ 1: อัปโหลดข้อมูลของคุณ")
     sheet_url = st.text_input(
         "Google Sheet URL or ID:",
         value=DEFAULT_SHEET_ID,
-        placeholder="ใส่ URL หรือ ID ของ Google Sheet ที่ต้องการบันทึกข้อมูล",
+        placeholder="ใส่ URL หรือ ID ของ Google Sheet ที่ต้องการบันทึกข้อมูล"
     )
     uploaded_files = st.file_uploader(
         "เลือกไฟล์ PDF หรือรูปภาพ (สามารถเลือกได้หลายไฟล์พร้อมกัน)",
-        type=["pdf", "jpg", "jpeg", "png"],
-        accept_multiple_files=True,
+        type=['pdf', 'jpg', 'jpeg', 'png'],
+        accept_multiple_files=True
     )
     if uploaded_files:
         if st.button("🚀 เริ่มประมวลผล", use_container_width=True, type="primary"):
@@ -1213,24 +1125,18 @@ def main():
             file_paths = []
             with st.spinner("กำลังเตรียมไฟล์เพื่ออัปโหลด..."):
                 for uploaded_file in uploaded_files:
-                    with tempfile.NamedTemporaryFile(
-                        delete=False, suffix=os.path.splitext(uploaded_file.name)[1]
-                    ) as tmp_file:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp_file:
                         tmp_file.write(uploaded_file.getvalue())
                         file_paths.append(tmp_file.name)
-            sheet_id = (
-                extract_sheet_id_from_url(sheet_url) if sheet_url else DEFAULT_SHEET_ID
-            )
+            sheet_id = extract_sheet_id_from_url(sheet_url) if sheet_url else DEFAULT_SHEET_ID
             results, errors = process_files(file_paths, sheet_id)
             st.subheader("ขั้นตอนที่ 2: ผลการประมวลผล")
             if results:
-                st.success(
-                    f"✅ ประมวลผลสำเร็จ {len(results)} ไฟล์ และบันทึกข้อมูลลง Google Sheet เรียบร้อยแล้ว"
-                )
+                st.success(f"✅ ประมวลผลสำเร็จ {len(results)} ไฟล์ และบันทึกข้อมูลลง Google Sheet เรียบร้อยแล้ว")
                 sheet_url_display = f"https://docs.google.com/spreadsheets/d/{sheet_id}"
                 st.markdown(f"**[คลิกที่นี่เพื่อเปิด Google Sheet]({sheet_url_display})**")
                 for result_data in results:
-                    company_name = result_data.get("company", "Unknown Company")
+                    company_name = result_data.get('company', 'Unknown Company')
                     with st.expander(f"📄 ผลลัพธ์จาก: {company_name}"):
                         st.json(result_data)
             if errors:
@@ -1238,7 +1144,7 @@ def main():
                 for error_info in errors:
                     with st.expander(f"🚨 ข้อผิดพลาดในไฟล์: {error_info['file_name']}"):
                         st.write(f"**สาเหตุ:**")
-                        st.code(error_info["error"], language=None)
+                        st.code(error_info['error'], language=None)
             if not results and not errors:
                 st.warning("ไม่สามารถประมวลผลไฟล์ใดๆ ได้ กรุณาตรวจสอบไฟล์และลองใหม่อีกครั้ง")
 
