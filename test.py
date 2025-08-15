@@ -1168,7 +1168,7 @@ def main():
     st.sidebar.title("ตั้งค่าการเชื่อมต่อ")
     google_api_key = st.sidebar.text_input(
         "Enter your GOOGLE_API_KEY",
-        value=st.session_state.get("google_api_key", "AIzaSyBuH5Vih-ngKUwHnG5HQD9ZrA59K9bybBE"),
+        value=st.session_state.get("google_api_key", ""),
         type="password",
         key="google_api_key_input",
     )
