@@ -1065,6 +1065,25 @@ matching_prompt = """
 You are a meticulous data architect specializing in product ontology for construction and home appliance materials. Your primary mission is to analyze product lists from different suppliers, establish a single "canonical" master product name for each item, and then map all supplier variations to that canonical name.
 Your logic must be hierarchical and rule-based. Follow this algorithm precisely.
 
+############################################
+# CRITICAL: ANTI-HALLUCINATION WARNING
+############################################
+- No Imagination: Only use information explicitly present in the input blocks `## Target Products` and `## Reference Products`. Do NOT invent, infer, or import any data from outside these inputs.
+- Source of Truth Lock: All fields in the JSON output must be derived ONLY from `target_products` (for quantity, unit, pricePerUnit, totalPrice, and the descriptive `name` for unique items) and from `reference_products` (for the canonical reference `name` in matchedItems). Never pull values from examples, prior knowledge, or assumptions.
+- Walkthrough Quarantine: The "Walkthrough Example" is instructional only. Its values MUST NOT appear in your output unless they are explicitly present in the actual inputs.
+- Field-Level Provenance:
+  * `matchedItems[].name` must be the canonical reference name you create based on matches between the current `target_products` and `reference_products` (not from examples).
+  * `matchedItems[]` quantity/unit/pricePerUnit/totalPrice MUST come from the matched target item only.
+  * `uniqueItems[].name` must be the full descriptive target product text (from `target_products`) when no match is found; never synthesize.
+- Ambiguity Rule: If any required detail to confirm a match is missing or conflicting, classify the target item as `unique` (do NOT guess).
+- Determinism & Reproducibility: If two targets could map to one reference, apply "One-to-One Mapping" and match the best candidate deterministically; the other(s) become `unique`.
+- Output Discipline: Return ONLY the final JSON object. No prose, no commentary, no markdown.
+- Validation Gate (self-check before output):
+  1) Every `matchedItems` row has Group + Normalized Type agreement with its reference.
+  2) No fields are invented; all numbers/units exist verbatim in `target_products`.
+  3) No values from the walkthrough or external knowledge leak into the output.
+  If any check fails, re-apply rules; if unresolved, mark as `unique`.
+
 ### **Core Objective: Create and Match to a Canonical Name**
 
 The "Canonical Name" is the single source of truth for a product. You must construct it using this strict format:
@@ -1168,7 +1187,7 @@ def main():
     st.sidebar.title("ตั้งค่าการเชื่อมต่อ")
     google_api_key = st.sidebar.text_input(
         "Enter your GOOGLE_API_KEY",
-        value=st.session_state.get("google_api_key", "AIzaSyBuH5Vih-ngKUwHnG5HQD9ZrA59K9bybBE"),
+        value=st.session_state.get("google_api_key", ""),
         type="password",
         key="google_api_key_input",
     )
