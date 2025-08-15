@@ -1,0 +1,781 @@
+<html lang="en"><head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Comparing Quotation – เทียบใบเสนอราคา</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&amp;family=JetBrains+Mono:wght@300;400;500;600&amp;display=swap" rel="stylesheet">
+
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+  </head>
+  <body class="min-h-screen antialiased selection:bg-blue-200 selection:text-blue-900 text-slate-900 bg-white" style="font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji';">
+    <!-- App Shell -->
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
+      <!-- macOS window frame -->
+      <div class="relative bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col" style="box-shadow: 0 10px 30px rgba(2,6,23,0.08), 0 2px 10px rgba(2,6,23,0.06);">
+        <!-- macOS title bar -->
+        <div class="h-12 flex sm:px-6 bg-white/70 border-slate-200 border-b pr-4 pl-4 backdrop-blur-sm items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2">
+              <span class="h-3 w-3 shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.15)] bg-[#ff5f56] rounded-full"></span>
+              <span class="h-3 w-3 rounded-full bg-[#ffbd2e] shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.15)]"></span>
+              <span class="h-3 w-3 rounded-full bg-[#27c93f] shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.15)]"></span>
+            </div>
+            <div class="hidden sm:flex items-center gap-2 text-sm text-slate-500">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="layers" class="lucide lucide-layers w-4 h-4 text-slate-400"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"></path><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12" class=""></path><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"></path></svg>
+              <span class="font-medium">Comparing Quotation – เทียบใบเสนอราคา</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <button id="mobileMenuBtn" class="sm:hidden inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all duration-200">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="panel-left" class="lucide lucide-panel-left w-4 h-4 text-slate-600"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M9 3v18"></path></svg>
+              <span class="text-sm text-slate-700">Menu</span>
+            </button>
+            <div class="hidden sm:flex items-center gap-3">
+              <div class="text-right">
+                <div class="text-sm font-medium text-slate-700">Guest</div>
+                <div class="text-xs text-slate-500">Not signed in</div>
+              </div>
+              <img src="https://images.unsplash.com/photo-1621619856624-42fd193a0661?w=1080&amp;q=80" alt="avatar" class="h-8 w-8 rounded-full ring-1 ring-slate-200 object-cover">
+            </div>
+          </div>
+        </div>
+
+        <!-- Content Area -->
+        <div class="flex-1 flex overflow-hidden">
+          <!-- Sidebar -->
+          <aside id="sidebar" class="w-64 shrink-0 hidden sm:flex flex-col transition-all duration-300 bg-slate-50 border-slate-200 border-r">
+            <div class="p-3">
+              <div class="px-2 py-2 text-xs font-medium text-slate-500">MAIN</div>
+              <nav class="flex flex-col gap-1">
+                <button id="nav-dashboard" data-view="dashboard" class="group flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-slate-700 hover:bg-slate-100 transition-all">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="layout-dashboard" class="lucide lucide-layout-dashboard w-4.5 h-4.5 text-slate-500 group-hover:text-slate-700"><rect width="7" height="9" x="3" y="3" rx="1"></rect><rect width="7" height="5" x="14" y="3" rx="1"></rect><rect width="7" height="9" x="14" y="12" rx="1"></rect><rect width="7" height="5" x="3" y="16" rx="1"></rect></svg>
+                  <span class="">Dashboard</span>
+                </button>
+              </nav>
+              <div class="px-2 py-3 text-xs font-medium text-slate-500">SETTINGS</div>
+              <nav class="flex flex-col gap-1">
+                <button id="nav-settings" data-view="settings" class="group flex gap-3 w-full hover:bg-slate-100 transition-all text-sm text-slate-700 rounded-lg pt-2.5 pr-3 pb-2.5 pl-3 items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="settings" class="lucide lucide-settings w-4.5 h-4.5 text-slate-500 group-hover:text-slate-700"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                  <span class="">Settings</span>
+                </button>
+              </nav>
+            </div>
+            <div class="mt-auto p-3 border-t border-slate-200">
+              <div class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-100 transition">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="info" class="lucide lucide-info w-4.5 h-4.5 text-slate-500"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                <div>
+                  <div class="text-xs text-slate-500">Version</div>
+                  <div class="text-sm font-medium text-slate-700">v1.0.0</div>
+                </div>
+              </div>
+            </div>
+          </aside>
+
+          <!-- Sidebar overlay (mobile) -->
+          <div id="mobileSidebar" class="fixed inset-0 z-40 hidden">
+            <div class="absolute inset-0 bg-slate-900/40"></div>
+            <div class="absolute left-0 top-0 bottom-0 w-72 bg-slate-50 border-r border-slate-200 p-3 flex flex-col">
+              <div class="flex items-center justify-between mb-2">
+                <div class="text-sm font-medium text-slate-600 px-2">Menu</div>
+                <button id="closeMobileSidebar" class="p-2 rounded-md hover:bg-slate-100">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="x" class="lucide lucide-x w-4 h-4 text-slate-600"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+                </button>
+              </div>
+              <div class="px-2 py-2 text-xs font-medium text-slate-500">MAIN</div>
+              <button data-view="dashboard" class="mobile-nav group flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-slate-700 hover:bg-slate-100 transition-all">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="layout-dashboard" class="lucide lucide-layout-dashboard w-4.5 h-4.5 text-slate-500 group-hover:text-slate-700"><rect width="7" height="9" x="3" y="3" rx="1"></rect><rect width="7" height="5" x="14" y="3" rx="1"></rect><rect width="7" height="9" x="14" y="12" rx="1"></rect><rect width="7" height="5" x="3" y="16" rx="1"></rect></svg>
+                <span>Dashboard</span>
+              </button>
+              <div class="px-2 py-3 text-xs font-medium text-slate-500">SETTINGS</div>
+              <button data-view="settings" class="mobile-nav group flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-slate-700 hover:bg-slate-100 transition-all">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="settings" class="lucide lucide-settings w-4.5 h-4.5 text-slate-500 group-hover:text-slate-700"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                <span>Settings</span>
+              </button>
+              <div class="mt-auto pt-3 border-t border-slate-200">
+                <div class="flex items-center gap-3 px-3 py-2 rounded-lg">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="info" class="lucide lucide-info w-4.5 h-4.5 text-slate-500"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                  <div>
+                    <div class="text-xs text-slate-500">Version</div>
+                    <div class="text-sm font-medium text-slate-700">v1.0.0</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Main Content -->
+          <main id="main" class="flex-1 overflow-y-auto">
+            <!-- DASHBOARD -->
+            <section id="view-dashboard" class="sm:p-6 animate-in fade-in slide-in-from-bottom-1 duration-500 pt-4 pr-4 pb-4 pl-4 space-y-6">
+              <header class="flex items-center justify-between">
+                <div class="">
+                  <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900">Dashboard</h1>
+                  <p class="text-sm text-slate-500 mt-1">Upload quotations and create a unified Excel report.</p>
+                </div>
+                <div class="hidden md:flex items-center gap-2">
+                  <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 text-sm text-slate-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="clock" class="lucide lucide-clock w-4 h-4 text-slate-500"><path d="M12 6v6l4 2"></path><circle cx="12" cy="12" r="10"></circle></svg>
+                    <span id="summary-estimate-top" class="">~ 3s</span>
+                  </div>
+                  <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 text-sm text-slate-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="file-text" class="lucide lucide-file-text w-4 h-4 text-slate-500"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 9H8"></path><path d="M16 13H8"></path><path d="M16 17H8"></path></svg>
+                    <span id="summary-count-top" class="">0 files</span>
+                  </div>
+                </div>
+              </header>
+
+              <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Upload Panel -->
+                <div class="lg:col-span-2 space-y-6">
+                  <!-- Google Sheet Link -->
+                  <div class="rounded-xl border border-slate-200 bg-white shadow-sm">
+                    <div class="p-4 sm:p-5">
+                      <label class="block text-sm font-medium text-slate-700 mb-2">Google Sheet Link / Excel Sheet</label>
+                      <div class="flex items-center gap-2">
+                        <div class="relative flex-1">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="link" class="lucide lucide-link absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                          <input id="sheetLink" type="url" placeholder="https://docs.google.com/spreadsheets/d/..." class="w-full focus:outline-none focus:ring-2 focus:ring-[#3B82F6] focus:border-[#3B82F6] placeholder-slate-400 transition text-sm text-slate-700 border-slate-200 border rounded-lg pt-2.5 pr-3 pb-2.5 pl-9">
+                        </div>
+                        <button id="btnOpenSheet" class="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-[#3B82F6]/40 text-[#1E3A8A] hover:bg-[#3B82F6]/5 hover:border-[#3B82F6]/60 transition" title="Open link in new tab">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="external-link" class="lucide lucide-external-link w-4 h-4"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
+                          <span>Open</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="border-t border-slate-200"></div>
+
+                    <!-- Upload Zone -->
+                    <div class="p-4 sm:p-5">
+                      <div id="dropzone" class="relative rounded-xl border-2 border-dashed border-slate-300 hover:border-[#3B82F6] bg-slate-50/60 hover:bg-slate-50 transition p-6 sm:p-8 text-center group">
+                        <div class="flex flex-col items-center gap-3">
+                          <div class="flex -space-x-3 items-center">
+                            <div class="h-10 w-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center shadow-sm">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="file" class="lucide lucide-file w-5 h-5 text-slate-500"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path></svg>
+                            </div>
+                            <div class="h-10 w-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center shadow-sm">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="image" class="lucide lucide-image w-5 h-5 text-slate-500"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect><circle cx="9" cy="9" r="2"></circle><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path></svg>
+                            </div>
+                            <div class="h-10 w-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center shadow-sm">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="file-text" class="lucide lucide-file-text w-5 h-5 text-slate-500"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 9H8"></path><path d="M16 13H8"></path><path d="M16 17H8"></path></svg>
+                            </div>
+                          </div>
+                          <div>
+                            <p class="text-sm text-slate-700">
+                              Drag &amp; Drop files here or
+                              <button id="browseBtn" class="text-[#1E3A8A] underline-offset-4 hover:underline font-medium">browse</button>
+                            </p>
+                            <p class="text-xs text-slate-500 mt-1">Supported: PDF, JPG, JPEG, PNG • Max 200MB per file</p>
+                          </div>
+                        </div>
+                        <input id="fileInput" type="file" accept="application/pdf,image/jpeg,image/png" multiple="" class="absolute inset-0 opacity-0 cursor-pointer">
+                      </div>
+                    </div>
+
+                    <!-- File List -->
+                    <div class="px-4 sm:px-5 pb-4 sm:pb-5">
+                      <div class="flex items-center justify-between mb-3">
+                        <div class="text-sm font-medium text-slate-700">Uploaded Files</div>
+                        <div class="text-xs text-slate-500" id="fileSummaryLabel">0 files • 0 MB</div>
+                      </div>
+                      <div id="fileList" class="space-y-2.5 min-h-[44px]">
+                        <!-- Files inserted here -->
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Output Format -->
+                  <div class="rounded-xl border border-slate-200 bg-white shadow-sm p-4 sm:p-5">
+                    <div class="flex items-center justify-between mb-3">
+                      <div class="text-sm font-medium text-slate-700">Output</div>
+                      <div class="text-xs text-slate-500">Choose your preferred format</div>
+                    </div>
+                    <div class="inline-flex items-center rounded-lg border border-slate-200 p-1 bg-slate-50">
+                      <button data-format="Excel" class="format-btn px-3 py-1.5 rounded-md text-sm font-medium text-slate-700 hover:bg-white hover:shadow-sm transition bg-white shadow-sm text-slate-900 border" style="border-color: rgb(191, 219, 254);">
+                        Excel
+                      </button>
+                      <button data-format="Google Sheet" class="format-btn px-3 py-1.5 rounded-md text-sm font-medium text-slate-700 hover:bg-white hover:shadow-sm transition">
+                        Google Sheet
+                      </button>
+                      <button data-format="Both" class="format-btn px-3 py-1.5 rounded-md text-sm font-medium text-slate-700 hover:bg-white hover:shadow-sm transition">
+                        Both
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Primary Action -->
+                  <div class="flex justify-end">
+                    <button id="processBtn" class="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-medium text-white bg-gradient-to-tr from-[#3B82F6] to-[#1E3A8A] shadow-md hover:shadow-lg hover:brightness-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#3B82F6] transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled="">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="play" class="lucide lucide-play w-4.5 h-4.5 text-white"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"></path></svg>
+                      <span>Process Files</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Summary Panel -->
+                <aside class="lg:col-span-1">
+                  <div class="rounded-xl border border-slate-200 bg-white shadow-sm p-4 sm:p-5 sticky top-4">
+                    <div class="flex items-center gap-2 mb-3">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="list" class="lucide lucide-list w-4.5 h-4.5 text-[#1E3A8A]"><path d="M3 12h.01"></path><path d="M3 18h.01"></path><path d="M3 6h.01"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M8 6h13"></path></svg>
+                      <h2 class="text-lg font-semibold tracking-tight text-slate-900">Processing Summary</h2>
+                    </div>
+                    <div class="space-y-3">
+                      <div class="flex items-center justify-between text-sm">
+                        <span class="text-slate-600">Total files</span>
+                        <span id="summary-count" class="font-medium text-slate-800">0</span>
+                      </div>
+                      <div class="flex items-center justify-between text-sm">
+                        <span class="text-slate-600">Total size</span>
+                        <span id="summary-size" class="font-medium text-slate-800">0 B</span>
+                      </div>
+                      <div class="flex items-center justify-between text-sm">
+                        <span class="text-slate-600">Estimated time</span>
+                        <span id="summary-estimate" class="font-medium text-slate-800">~ 3s</span>
+                      </div>
+                      <div class="flex items-center justify-between text-sm">
+                        <span class="text-slate-600">Output format</span>
+                        <span id="summary-format" class="font-medium text-slate-800">Excel</span>
+                      </div>
+                    </div>
+                    <div class="mt-4 pt-4 border-t border-slate-200">
+                      <div class="text-xs text-slate-500">
+                        Your files are processed securely in the cloud. You can close this window while processing.
+                      </div>
+                    </div>
+                  </div>
+                </aside>
+              </div>
+            </section>
+
+            <!-- PROCESSING -->
+            <section id="view-processing" class="hidden p-6 h-full flex flex-col items-center justify-center text-center">
+              <div class="space-y-6">
+                <div class="relative">
+                  <div class="h-14 w-14 rounded-full border-2 border-slate-200 flex items-center justify-center mx-auto">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="loader-2" class="lucide lucide-loader-2 w-7 h-7 text-[#1E3A8A] animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>
+                  </div>
+                </div>
+                <div>
+                  <h2 class="text-xl sm:text-2xl font-semibold tracking-tight text-slate-900">Processing your files</h2>
+                  <p id="processing-eta" class="text-sm text-slate-500 mt-1">~ 0s remaining</p>
+                </div>
+
+                <div class="max-w-xl mx-auto text-left">
+                  <ol class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                    <li class="step-item rounded-lg border border-slate-200 bg-white p-3 flex items-start gap-3">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="upload-cloud" class="lucide lucide-upload-cloud step-icon w-4.5 h-4.5 text-slate-400"><path d="M12 13v8"></path><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"></path><path d="m8 17 4-4 4 4"></path></svg>
+                      <div>
+                        <div class="text-sm font-medium text-slate-800">Uploading</div>
+                        <div class="text-xs text-slate-500">Sending files</div>
+                      </div>
+                    </li>
+                    <li class="step-item rounded-lg border border-slate-200 bg-white p-3 flex items-start gap-3">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="scan-line" class="lucide lucide-scan-line step-icon w-4.5 h-4.5 text-slate-400"><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><path d="M7 12h10"></path></svg>
+                      <div>
+                        <div class="text-sm font-medium text-slate-800">Analyzing</div>
+                        <div class="text-xs text-slate-500">Understanding docs</div>
+                      </div>
+                    </li>
+                    <li class="step-item rounded-lg border border-slate-200 bg-white p-3 flex items-start gap-3">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="table" class="lucide lucide-table step-icon w-4.5 h-4.5 text-slate-400"><path d="M12 3v18"></path><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M3 9h18"></path><path d="M3 15h18"></path></svg>
+                      <div>
+                        <div class="text-sm font-medium text-slate-800">Extracting Data</div>
+                        <div class="text-xs text-slate-500">Parsing lines &amp; prices</div>
+                      </div>
+                    </li>
+                    <li class="step-item rounded-lg border border-slate-200 bg-white p-3 flex items-start gap-3">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="file-spreadsheet" class="lucide lucide-file-spreadsheet step-icon w-4.5 h-4.5 text-slate-400"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M8 13h2"></path><path d="M14 13h2"></path><path d="M8 17h2"></path><path d="M14 17h2"></path></svg>
+                      <div>
+                        <div class="text-sm font-medium text-slate-800">Creating Excel</div>
+                        <div class="text-xs text-slate-500">Finalizing output</div>
+                      </div>
+                    </li>
+                  </ol>
+                </div>
+
+                <div class="text-xs text-slate-500">
+                  This may take a moment depending on file sizes.
+                </div>
+              </div>
+            </section>
+
+            <!-- SUCCESS -->
+            <section id="view-success" class="hidden p-6 h-full flex flex-col items-center justify-center text-center relative">
+              <!-- subtle confetti pings -->
+              <div class="absolute inset-0 pointer-events-none overflow-hidden">
+                <span class="absolute top-10 left-1/4 h-2 w-2 rounded-full bg-[#3B82F6]/40 animate-ping"></span>
+                <span class="absolute top-16 right-1/4 h-2 w-2 rounded-full bg-emerald-400/40 animate-ping"></span>
+                <span class="absolute bottom-12 left-1/3 h-2 w-2 rounded-full bg-[#1E3A8A]/30 animate-ping"></span>
+              </div>
+
+              <div class="space-y-6">
+                <div class="relative mx-auto">
+                  <div class="absolute inset-0 blur-2xl bg-[#3B82F6]/20 rounded-full scale-125"></div>
+                  <div class="relative h-16 w-16 rounded-full bg-white border border-slate-200 shadow-md flex items-center justify-center mx-auto">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="check-circle-2" class="lucide lucide-check-circle-2 w-10 h-10 text-emerald-500"><circle cx="12" cy="12" r="10"></circle><path d="m9 12 2 2 4-4"></path></svg>
+                  </div>
+                </div>
+                <div>
+                  <h2 class="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900">Processing Complete</h2>
+                  <p class="text-sm text-slate-500 mt-1">Your Excel file is ready.</p>
+                </div>
+                <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+                  <button id="downloadBtn" class="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-medium text-white bg-gradient-to-tr from-[#3B82F6] to-[#1E3A8A] shadow-md hover:shadow-lg hover:brightness-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#3B82F6] transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="download" class="lucide lucide-download w-4.5 h-4.5"><path d="M12 15V3"></path><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path></svg>
+                    <span>Download Excel</span>
+                  </button>
+                  <button id="openSheetBtn" class="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-medium text-[#1E3A8A] border border-[#3B82F6]/40 hover:bg-[#3B82F6]/5 hover:border-[#3B82F6]/60 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#3B82F6]/60 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="external-link" class="lucide lucide-external-link w-4.5 h-4.5"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
+                    <span>Open Google Sheet</span>
+                  </button>
+                </div>
+                <div>
+                  <button id="newRunBtn" class="text-sm text-slate-600 hover:text-slate-800 underline underline-offset-4">Process more files</button>
+                </div>
+              </div>
+            </section>
+
+            <!-- ERROR -->
+            <section id="view-error" class="hidden p-6 h-full flex flex-col items-center justify-center text-center">
+              <div class="space-y-5 max-w-lg">
+                <div class="h-16 w-16 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center mx-auto">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="triangle-alert" class="lucide lucide-triangle-alert w-10 h-10 text-rose-500"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+                </div>
+                <div>
+                  <h2 class="text-2xl font-semibold tracking-tight text-slate-900">Processing Failed</h2>
+                  <p class="text-sm text-slate-500 mt-1">Please review the details below.</p>
+                </div>
+                <div id="errorBox" class="text-left text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-4">
+                  Unknown error.
+                </div>
+                <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+                  <button id="retryBtn" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-[#3B82F6] hover:bg-[#316dd1] shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#3B82F6] transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="rotate-ccw" class="lucide lucide-rotate-ccw w-4.5 h-4.5"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+                    <span>Try Again</span>
+                  </button>
+                  <a href="mailto:support@example.com" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-[#1E3A8A] border border-[#3B82F6]/40 hover:bg-[#3B82F6]/5 hover:border-[#3B82F6]/60 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#3B82F6]/60 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="life-buoy" class="lucide lucide-life-buoy w-4.5 h-4.5"><circle cx="12" cy="12" r="10"></circle><path d="m4.93 4.93 4.24 4.24"></path><path d="m14.83 9.17 4.24-4.24"></path><path d="m14.83 14.83 4.24 4.24"></path><path d="m9.17 14.83-4.24 4.24"></path><circle cx="12" cy="12" r="4"></circle></svg>
+                    <span>Contact Support</span>
+                  </a>
+                </div>
+              </div>
+            </section>
+
+            <!-- SETTINGS -->
+            <section id="view-settings" class="hidden p-4 sm:p-6 space-y-6">
+              <header>
+                <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900">Settings</h1>
+                <p class="text-sm text-slate-500 mt-1">Manage API keys and your profile.</p>
+              </header>
+
+              <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- API Keys -->
+                <div class="lg:col-span-2 rounded-xl border border-slate-200 bg-white shadow-sm p-4 sm:p-5">
+                  <div class="flex items-center gap-2 mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="key-round" class="lucide lucide-key-round w-4.5 h-4.5 text-[#1E3A8A]"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"></path><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"></circle></svg>
+                    <h2 class="text-lg font-semibold tracking-tight text-slate-900">API Keys</h2>
+                  </div>
+                  <div class="space-y-4">
+                    <div>
+                      <label class="block text-sm font-medium text-slate-700 mb-2">OpenAI API Key</label>
+                      <input type="password" placeholder="sk-********************************" class="w-full px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#3B82F6] focus:border-[#3B82F6] text-sm text-slate-700 placeholder-slate-400 transition font-mono" style="font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;">
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-slate-700 mb-2">Google API Key</label>
+                      <input type="password" placeholder="AIza********************************" class="w-full px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#3B82F6] focus:border-[#3B82F6] text-sm text-slate-700 placeholder-slate-400 transition font-mono" style="font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;">
+                    </div>
+                  </div>
+                  <div class="mt-5 flex justify-end">
+                    <button class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-[#3B82F6] hover:bg-[#316dd1] shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#3B82F6] transition">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="save" class="lucide lucide-save w-4.5 h-4.5"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"></path><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"></path><path d="M7 3v4a1 1 0 0 0 1 1h7"></path></svg>
+                      <span>Save</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Profile -->
+                <div class="rounded-xl border border-slate-200 bg-white shadow-sm p-4 sm:p-5">
+                  <div class="flex items-center gap-2 mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="user" class="lucide lucide-user w-4.5 h-4.5 text-[#1E3A8A]"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                    <h2 class="text-lg font-semibold tracking-tight text-slate-900">Profile</h2>
+                  </div>
+                  <div class="flex items-center gap-4">
+                    <img id="profileAvatar" src="https://images.unsplash.com/photo-1642615835477-d303d7dc9ee9?w=1080&amp;q=80" class="h-14 w-14 rounded-full object-cover border border-slate-200" alt="Profile">
+                    <div class="flex-1">
+                      <div class="text-sm text-slate-600">Login email</div>
+                      <div class="text-sm font-medium text-slate-800">user@example.com</div>
+                    </div>
+                  </div>
+                  <div class="mt-4">
+                    <label class="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium text-[#1E3A8A] border border-[#3B82F6]/40 hover:bg-[#3B82F6]/5 hover:border-[#3B82F6]/60 cursor-pointer transition">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="upload" class="lucide lucide-upload w-4.5 h-4.5"><path d="M12 3v12"></path><path d="m17 8-5-5-5 5"></path><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path></svg>
+                      <span>Change Photo</span>
+                      <input id="avatarInput" type="file" accept="image/*" class="hidden">
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </main>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+      // Icon rendering helper
+      function refreshIcons() {
+        if (window.lucide) {
+          lucide.createIcons({ attrs: { 'stroke-width': 1.5 } });
+        }
+      }
+
+      // Initial state
+      const state = {
+        page: 'dashboard',
+        files: [],
+        outputFormat: 'Excel',
+        sheetLink: '',
+        estimatedSec: 0,
+        errorReason: ''
+      };
+
+      // Elements
+      const views = {
+        dashboard: document.getElementById('view-dashboard'),
+        processing: document.getElementById('view-processing'),
+        success: document.getElementById('view-success'),
+        error: document.getElementById('view-error'),
+        settings: document.getElementById('view-settings')
+      };
+      const navDashboard = document.getElementById('nav-dashboard');
+      const navSettings = document.getElementById('nav-settings');
+
+      const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+      const mobileSidebar = document.getElementById('mobileSidebar');
+      const closeMobileSidebar = document.getElementById('closeMobileSidebar');
+
+      const fileInput = document.getElementById('fileInput');
+      const dropzone = document.getElementById('dropzone');
+      const fileList = document.getElementById('fileList');
+      const fileSummaryLabel = document.getElementById('fileSummaryLabel');
+
+      const sheetLinkInput = document.getElementById('sheetLink');
+      const btnOpenSheet = document.getElementById('btnOpenSheet');
+      const browseBtn = document.getElementById('browseBtn');
+
+      const processBtn = document.getElementById('processBtn');
+      const summaryCount = document.getElementById('summary-count');
+      const summarySize = document.getElementById('summary-size');
+      const summaryEstimate = document.getElementById('summary-estimate');
+      const summaryFormat = document.getElementById('summary-format');
+      const summaryCountTop = document.getElementById('summary-count-top');
+      const summaryEstimateTop = document.getElementById('summary-estimate-top');
+
+      const processingEta = document.getElementById('processing-eta');
+
+      const errorBox = document.getElementById('errorBox');
+      const retryBtn = document.getElementById('retryBtn');
+
+      const downloadBtn = document.getElementById('downloadBtn');
+      const openSheetBtn = document.getElementById('openSheetBtn');
+      const newRunBtn = document.getElementById('newRunBtn');
+
+      const formatBtns = Array.from(document.querySelectorAll('.format-btn'));
+
+      function switchView(name) {
+        Object.entries(views).forEach(([k, el]) => {
+          if (!el) return;
+          if (k === name) {
+            el.classList.remove('hidden');
+            el.classList.add('animate-in', 'fade-in', 'slide-in-from-bottom-1', 'duration-500');
+          } else {
+            el.classList.add('hidden');
+            el.classList.remove('animate-in', 'fade-in', 'slide-in-from-bottom-1', 'duration-500');
+          }
+        });
+        state.page = name;
+        refreshIcons();
+      }
+
+      function updateFormatButtons() {
+        formatBtns.forEach(btn => {
+          const active = btn.dataset.format === state.outputFormat;
+          btn.classList.toggle('bg-white', active);
+          btn.classList.toggle('shadow-sm', active);
+          btn.classList.toggle('text-slate-900', active);
+          btn.classList.toggle('border', active);
+          btn.style.borderColor = active ? '#BFDBFE' : '';
+        });
+        summaryFormat.textContent = state.outputFormat;
+      }
+
+      function bytesToSize(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B','KB','MB','GB','TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        const v = (bytes / Math.pow(k, i)).toFixed(i >= 2 ? 2 : 0);
+        return `${v} ${sizes[i]}`;
+      }
+
+      function calcEstimateSec() {
+        const totalBytes = state.files.reduce((a,f)=>a+f.size,0);
+        const mb = totalBytes / (1024*1024);
+        const sec = Math.min(120, Math.max(3, Math.round(3 + mb * 0.6)));
+        state.estimatedSec = sec;
+      }
+
+      function updateSummary() {
+        const total = state.files.length;
+        const totalBytes = state.files.reduce((a,f)=>a+f.size,0);
+        calcEstimateSec();
+
+        summaryCount.textContent = String(total);
+        summarySize.textContent = bytesToSize(totalBytes);
+        summaryEstimate.textContent = `~ ${state.estimatedSec}s`;
+        summaryCountTop.textContent = `${total} ${total === 1 ? 'file' : 'files'}`;
+        summaryEstimateTop.textContent = `~ ${state.estimatedSec}s`;
+
+        // Update file summary label
+        const sizeLabel = totalBytes ? bytesToSize(totalBytes) : '0 MB';
+        fileSummaryLabel.textContent = `${total} ${total === 1 ? 'file' : 'files'} • ${sizeLabel}`;
+
+        // Toggle process button availability
+        processBtn.disabled = total === 0;
+      }
+
+      function iconForFile(name, type) {
+        const ext = (name.split('.').pop() || '').toLowerCase();
+        if (type.startsWith('image/') || ['png','jpg','jpeg','webp'].includes(ext)) return 'image';
+        if (ext === 'xlsx' || ext === 'xls') return 'file-spreadsheet';
+        if (ext === 'csv') return 'file-input';
+        if (ext === 'pdf' || type === 'application/pdf') return 'file-text';
+        return 'file';
+      }
+
+      function renderFiles() {
+        fileList.innerHTML = '';
+        state.files.forEach((f, idx) => {
+          const row = document.createElement('div');
+          row.className = 'flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5';
+          row.innerHTML = `
+            <div class="flex items-center gap-3">
+              <div class="h-8 w-8 rounded-md bg-slate-50 border border-slate-200 flex items-center justify-center">
+                <i data-lucide="${iconForFile(f.name, f.type)}" class="w-4.5 h-4.5 text-slate-500"></i>
+              </div>
+              <div>
+                <div class="text-sm font-medium text-slate-800 truncate max-w-[220px] sm:max-w-[340px]">${f.name}</div>
+                <div class="text-xs text-slate-500">${bytesToSize(f.size)}</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <button data-idx="${idx}" class="remove-file inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-800 px-2 py-1 rounded-md hover:bg-slate-100">
+                <i data-lucide="x" class="w-4 h-4"></i>
+                Remove
+              </button>
+            </div>
+          `;
+          fileList.appendChild(row);
+        });
+        // Bind remove actions
+        fileList.querySelectorAll('.remove-file').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            const i = Number(e.currentTarget.getAttribute('data-idx'));
+            state.files.splice(i, 1);
+            renderFiles();
+            updateSummary();
+            refreshIcons();
+          });
+        });
+        refreshIcons();
+      }
+
+      function addFiles(fileListLike) {
+        const allowed = ['application/pdf','image/jpeg','image/png'];
+        const added = [];
+        Array.from(fileListLike).forEach(f => {
+          if (allowed.includes(f.type)) {
+            added.push(f);
+          }
+        });
+        if (added.length) {
+          state.files.push(...added);
+          renderFiles();
+          updateSummary();
+        }
+      }
+
+      // Processing simulation
+      let stepTimer = null;
+      function setStepsProgress(stepIndex) {
+        const items = Array.from(document.querySelectorAll('#view-processing .step-item .step-icon'));
+        items.forEach((icon, i) => {
+          icon.classList.remove('text-slate-400','text-[#1E3A8A]','text-emerald-500');
+          if (i < stepIndex) {
+            icon.classList.add('text-emerald-500');
+          } else if (i === stepIndex) {
+            icon.classList.add('text-[#1E3A8A]');
+          } else {
+            icon.classList.add('text-slate-400');
+          }
+        });
+      }
+
+      function simulateProcessing() {
+        switchView('processing');
+        const totalSec = Math.max(4, Math.min(10, state.estimatedSec || 6)); // keep it short for testing
+        let remaining = totalSec;
+        processingEta.textContent = `~ ${remaining}s remaining`;
+        setStepsProgress(0);
+
+        let step = 0;
+        const stepPoints = [0, Math.floor(totalSec/3), Math.floor(2*totalSec/3), totalSec-1];
+        stepTimer = setInterval(() => {
+          remaining -= 1;
+          processingEta.textContent = `~ ${Math.max(0, remaining)}s remaining`;
+          // Advance step when passing points
+          if (step < stepPoints.length && remaining === totalSec - stepPoints[step] - 1) {
+            setStepsProgress(step);
+            step += 1;
+          }
+          if (remaining <= 0) {
+            clearInterval(stepTimer);
+            setStepsProgress(4);
+            switchView('success');
+          }
+        }, 1000);
+      }
+
+      // Navigation
+      if (navDashboard) navDashboard.addEventListener('click', () => switchView('dashboard'));
+      if (navSettings) navSettings.addEventListener('click', () => switchView('settings'));
+
+      // Mobile sidebar
+      if (mobileMenuBtn) mobileMenuBtn.addEventListener('click', () => {
+        mobileSidebar.classList.remove('hidden');
+      });
+      if (closeMobileSidebar) closeMobileSidebar.addEventListener('click', () => {
+        mobileSidebar.classList.add('hidden');
+      });
+      document.querySelectorAll('.mobile-nav').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const v = e.currentTarget.getAttribute('data-view');
+          switchView(v);
+          mobileSidebar.classList.add('hidden');
+        });
+      });
+
+      // Dropzone / File input
+      if (browseBtn) browseBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        fileInput.click();
+      });
+      if (fileInput) {
+        fileInput.addEventListener('change', (e) => {
+          addFiles(e.target.files);
+          fileInput.value = '';
+        });
+      }
+      if (dropzone) {
+        ['dragenter','dragover'].forEach(evt => {
+          dropzone.addEventListener(evt, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.add('border-[#3B82F6]');
+          });
+        });
+        ['dragleave','drop'].forEach(evt => {
+          dropzone.addEventListener(evt, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.remove('border-[#3B82F6]');
+          });
+        });
+        dropzone.addEventListener('drop', (e) => {
+          const dt = e.dataTransfer;
+          if (dt && dt.files) addFiles(dt.files);
+        });
+      }
+
+      // Sheet link
+      if (sheetLinkInput) {
+        sheetLinkInput.addEventListener('input', (e) => {
+          state.sheetLink = e.target.value.trim();
+        });
+      }
+      if (btnOpenSheet) {
+        btnOpenSheet.addEventListener('click', () => {
+          if (state.sheetLink) {
+            window.open(state.sheetLink, '_blank', 'noopener,noreferrer');
+          }
+        });
+      }
+
+      // Output format buttons
+      formatBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.outputFormat = btn.dataset.format;
+          updateFormatButtons();
+        });
+      });
+
+      // Process button
+      if (processBtn) {
+        processBtn.addEventListener('click', () => {
+          if (!state.files.length) return;
+          simulateProcessing();
+        });
+      }
+
+      // Error retry
+      if (retryBtn) {
+        retryBtn.addEventListener('click', () => {
+          switchView('dashboard');
+        });
+      }
+
+      // Success actions
+      if (downloadBtn) {
+        downloadBtn.addEventListener('click', () => {
+          // Create a dummy Excel file for testing
+          const content = 'Dummy,Excel,Content\nItem,Qty,Price\nA,1,100';
+          const blob = new Blob([content], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'quotation-comparison.xlsx';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        });
+      }
+      if (openSheetBtn) {
+        openSheetBtn.addEventListener('click', () => {
+          if (state.sheetLink) {
+            window.open(state.sheetLink, '_blank', 'noopener,noreferrer');
+          }
+        });
+      }
+      if (newRunBtn) {
+        newRunBtn.addEventListener('click', () => {
+          state.files = [];
+          renderFiles();
+          updateSummary();
+          switchView('dashboard');
+        });
+      }
+
+      // Initialize
+      updateFormatButtons();
+      updateSummary();
+      refreshIcons();
+    </script>
+  </body></html>
