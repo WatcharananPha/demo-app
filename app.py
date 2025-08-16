@@ -394,7 +394,7 @@ def update_google_sheet_for_single_file(ws, data):
                     }
                 )
     else:
-        summary_row = insertion_row + len(new_products)
+        summary_row = insertion_row + len(new_products) + 2
         for i, (label, value) in enumerate(summary_items):
             row = summary_row + i
             batch_requests.append(
@@ -532,7 +532,7 @@ def update_google_sheet_with_multiple_files(ws, all_json_data):
                 )
                 existing_products.append({"name": product.get("name", "Unknown Product"), "row": row})
 
-        summary_row = start_row + len(existing_products)
+        summary_row = start_row + len(existing_products) + 2
         summary_items = [
             ("รวมเป็นเงิน", data.get("totalPrice", 0)),
             ("ภาษีมูลค่าเพิ่ม 7%", data.get("totalVat", 0)),
