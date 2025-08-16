@@ -1082,7 +1082,6 @@ All three products are mapped to the canonical name `1BR+2BR(57-70sqm.) - Hood -
 {reference_products}
 """
 
-
 def main():
     st.set_page_config(page_title="ระบบประมวลผลใบเสนอราคา", layout="centered")
     st.sidebar.title("ตั้งค่าการเชื่อมต่อ")

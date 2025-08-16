@@ -1082,13 +1082,12 @@ All three products are mapped to the canonical name `1BR+2BR(57-70sqm.) - Hood -
 {reference_products}
 """
 
-
 def main():
     st.set_page_config(page_title="ระบบประมวลผลใบเสนอราคา", layout="centered")
     st.sidebar.title("ตั้งค่าการเชื่อมต่อ")
     google_api_key = st.sidebar.text_input(
         "Enter your GOOGLE_API_KEY", 
-        value=st.session_state.get("google_api_key", ""), 
+        value=st.session_state.get("google_api_key", "AIzaSyCBwfI--raXVSfVmp29P91YYSpPIfLYqe4"), 
         type="password",
         key="google_api_key_input"
     )
