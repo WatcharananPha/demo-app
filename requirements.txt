@@ -1,12 +1,16 @@
-concurrent.futures ; python_version < "3.2"
-os
-json
-tempfile
-re
-time
-mimetypes
 google-generativeai
 gspread
-streamlit
+python-dotenv
+oauth2client
+Pillow
 google-auth
+google-auth-oauthlib
+ujson
+requests
+fastapi
+python-multipart
+pydantic
+uvicorn[standard]
+gunicorn
 openpyxl
+streamlit
