@@ -176,6 +176,15 @@ def validate_json_data(json_data):
 
     return json_data
 
+def extract_product_code(name):
+    if not name:
+        return None
+    match = re.search(r'\b([A-Z]+[0-9]+[A-Z0-9.]*|[A-Z0-9.]+[A-Z]+[0-9]+[A-Z0-9.]*)\b', name)
+    if match:
+        return match.group(1)
+    return None
+            
+    return None
 def match_products_with_gemini(target_products, reference_products):
     if not target_products:
         return {"matchedItems": [], "uniqueItems": []}
@@ -249,98 +258,88 @@ def find_next_available_column(ws):
     groups_used = (offset + COLUMNS_PER_SUPPLIER - 1) // COLUMNS_PER_SUPPLIER
     return start_col + groups_used * COLUMNS_PER_SUPPLIER
 
-def update_google_sheet_for_single_file(ws, data):
-    ensure_first_three_rows_exist(ws)
+def update_google_sheet_for_single_file(ws, data, existing_products, existing_suppliers):
     start_row = HEADER_ROW + 1
-    sheet_values = ws.get_all_values()
-    existing_products = []
+    
     summary_row_map = {}
     first_summary_row = -1
-
-    for row_idx, row in enumerate(sheet_values[HEADER_ROW:], start=start_row):
-        if len(row) >= ITEM_MASTER_LIST_COL and row[ITEM_MASTER_LIST_COL - 1].strip():
-            cell_value = row[ITEM_MASTER_LIST_COL - 1].strip()
-            if cell_value in SUMMARY_LABELS:
-                if first_summary_row == -1:
-                    first_summary_row = row_idx
-                summary_row_map[cell_value] = row_idx
-            else:
-                product_name = clean_product_name(cell_value)
-                existing_products.append({"name": product_name, "row": row_idx})
-
-    existing_suppliers = {}
-    header_row_values = sheet_values[COMPANY_NAME_ROW - 1] if sheet_values else []
-    for col_idx in range(
-        ITEM_MASTER_LIST_COL + 1,
-        len(header_row_values) + 1,
-        COLUMNS_PER_SUPPLIER,
-    ):
-        supplier_name = ""
-        if COMPANY_NAME_ROW - 1 < len(sheet_values) and (col_idx - 1) < len(sheet_values[COMPANY_NAME_ROW - 1]):
-            supplier_name = sheet_values[COMPANY_NAME_ROW - 1][col_idx - 1].strip()
-        if supplier_name:
-            existing_suppliers[supplier_name] = col_idx
-
-    next_avail_col = find_next_available_column(ws)
+    for p in existing_products:
+        if p["name"] in SUMMARY_LABELS:
+             if first_summary_row == -1:
+                first_summary_row = p["row"]
+             summary_row_map[p["name"]] = p["row"]
 
     products = data.get("products", [])
     if not products:
-        return
-
-    for product in products:
-        if product.get("name"):
-            product["name"] = clean_product_name(product["name"])
+        return existing_products, existing_suppliers
 
     company_name = data.get("company", "Unknown Company")
-    col_idx = existing_suppliers.get(company_name, next_avail_col)
+    col_idx = existing_suppliers.get(company_name, find_next_available_column(ws))
 
     batch_requests = [
         {"range": f"{get_column_letter(col_idx)}{COMPANY_NAME_ROW}", "values": [[company_name]]},
         {"range": f"{get_column_letter(col_idx)}{CONTACT_INFO_ROW}", "values": [[f"{data.get('contact', '')}".strip()]]},
         {"range": f"{get_column_letter(col_idx)}{HEADER_ROW}:{get_column_letter(col_idx + COLUMNS_PER_SUPPLIER - 1)}{HEADER_ROW}", "values": [["ปริมาณ", "หน่วย", "ราคาต่อหน่วย", "รวมเป็นเงิน"]]},
     ]
-
-    reference_data = [{"name": item["name"]} for item in existing_products]
-    match_results = match_products_with_gemini(products, reference_data)
-    matched_items = match_results.get("matchedItems", [])
-    unique_items = match_results.get("uniqueItems", [])
-
-    populated_rows = set()
-    for item in matched_items:
-        item_name = item.get("name", "")
-        for existing in existing_products:
-            if existing["name"] == item_name and existing["row"] not in populated_rows:
-                batch_requests.append({
-                    "range": f"{get_column_letter(col_idx)}{existing['row']}:{get_column_letter(col_idx + COLUMNS_PER_SUPPLIER - 1)}{existing['row']}",
-                    "values": [[item.get("quantity", 1), item.get("unit", "ชิ้น"), item.get("pricePerUnit", 0), item.get("totalPrice", 0)]],
-                })
-                populated_rows.add(existing["row"])
-                break
-
+    
+    code_to_row_map = {extract_product_code(p["name"]): p["row"] for p in existing_products if extract_product_code(p["name"])}
+    products_no_code = [p for p in existing_products if not extract_product_code(p["name"])]
+    
+    products_for_gemini = []
     new_products = []
-    for item in unique_items:
-        if isinstance(item, dict) and "name" in item:
-            item["name"] = clean_product_name(item["name"])
-            if not any(existing["name"] == item["name"] for existing in existing_products):
-                new_products.append(item)
+    populated_rows = set()
+
+    for product in products:
+        code = extract_product_code(product.get("name", ""))
+        if code and code in code_to_row_map:
+            row_to_update = code_to_row_map[code]
+            if row_to_update not in populated_rows:
+                batch_requests.append({
+                    "range": f"{get_column_letter(col_idx)}{row_to_update}:{get_column_letter(col_idx + COLUMNS_PER_SUPPLIER - 1)}{row_to_update}",
+                    "values": [[product.get("quantity", 1), product.get("unit", "ชิ้น"), product.get("pricePerUnit", 0), product.get("totalPrice", 0)]],
+                })
+                populated_rows.add(row_to_update)
+        else:
+            products_for_gemini.append(product)
+            
+    if products_for_gemini:
+        reference_data = [{"name": p["name"]} for p in products_no_code]
+        match_results = match_products_with_gemini(products_for_gemini, reference_data)
+        
+        for item in match_results.get("matchedItems", []):
+            for existing in products_no_code:
+                if existing["name"] == item.get("name", "") and existing["row"] not in populated_rows:
+                    batch_requests.append({
+                        "range": f"{get_column_letter(col_idx)}{existing['row']}:{get_column_letter(col_idx + COLUMNS_PER_SUPPLIER - 1)}{existing['row']}",
+                        "values": [[item.get("quantity", 1), item.get("unit", "ชิ้น"), item.get("pricePerUnit", 0), item.get("totalPrice", 0)]],
+                    })
+                    populated_rows.add(existing["row"])
+                    break
+        new_products.extend(match_results.get("uniqueItems", []))
 
     insertion_row = first_summary_row if first_summary_row > 0 else (start_row + len(existing_products))
 
     if new_products:
-        ws.insert_rows([[""] * ws.col_count for _ in new_products], insertion_row)
-        row_shift = len(new_products)
-        if first_summary_row > 0:
-            for label in list(summary_row_map.keys()):
-                summary_row_map[label] += row_shift
-
-        for i, product in enumerate(new_products):
-            row = insertion_row + i
-            batch_requests.append({"range": f"{get_column_letter(ITEM_MASTER_LIST_COL)}{row}", "values": [[product.get("name", "Unknown Product")]]})
-            batch_requests.append({
-                "range": f"{get_column_letter(col_idx)}{row}:{get_column_letter(col_idx + COLUMNS_PER_SUPPLIER - 1)}{row}",
-                "values": [[product.get("quantity", 1), product.get("unit", "ชิ้น"), product.get("pricePerUnit", 0), product.get("totalPrice", 0)]],
-            })
-
+        final_new_products = []
+        for item in new_products:
+            if not any(clean_product_name(existing["name"]) == clean_product_name(item.get("name")) for existing in existing_products):
+                final_new_products.append(item)
+        
+        if final_new_products:
+            ws.insert_rows([[""] * ws.col_count for _ in final_new_products], insertion_row)
+            for i, product in enumerate(final_new_products):
+                row = insertion_row + i
+                product_name = clean_product_name(product.get("name", "Unknown Product"))
+                batch_requests.append({"range": f"{get_column_letter(ITEM_MASTER_LIST_COL)}{row}", "values": [[product_name]]})
+                batch_requests.append({
+                    "range": f"{get_column_letter(col_idx)}{row}:{get_column_letter(col_idx + COLUMNS_PER_SUPPLIER - 1)}{row}",
+                    "values": [[product.get("quantity", 1), product.get("unit", "ชิ้น"), product.get("pricePerUnit", 0), product.get("totalPrice", 0)]],
+                })
+                existing_products.append({"name": product_name, "row": row})
+    
+    if company_name not in existing_suppliers:
+        existing_suppliers[company_name] = col_idx
+    
     price_col = col_idx + COLUMNS_PER_SUPPLIER - 1
     summary_items = [
         ("รวมเป็นเงิน", data.get("totalPrice", 0)),
@@ -357,7 +356,8 @@ def update_google_sheet_for_single_file(ws, data):
             if label in summary_row_map:
                 batch_requests.append({"range": f"{get_column_letter(price_col)}{summary_row_map[label]}", "values": [[value]]})
     else:
-        summary_row = insertion_row + len(new_products) + 2
+        num_new_rows = len(final_new_products) if 'final_new_products' in locals() else 0
+        summary_row = insertion_row + num_new_rows + 2
         for i, (label, value) in enumerate(summary_items):
             row = summary_row + i
             batch_requests.append({"range": f"{get_column_letter(ITEM_MASTER_LIST_COL)}{row}", "values": [[label]]})
@@ -365,6 +365,8 @@ def update_google_sheet_for_single_file(ws, data):
 
     if batch_requests:
         ws.batch_update(batch_requests, value_input_option="USER_ENTERED")
+        
+    return existing_products, existing_suppliers
 
 def get_file_type(file_path):
     mime_type, _ = mimetypes.guess_type(file_path)
@@ -449,6 +451,18 @@ def process_files(file_paths, sheet_id=DEFAULT_SHEET_ID):
     if data_by_index:
         status.update(label="Updating Google Sheet sequentially...", state="running")
         ws = authenticate_and_open_sheet(extract_sheet_id_from_url(sheet_id) or DEFAULT_SHEET_ID)
+        initial_sheet_values = ws.get_all_values()
+        live_existing_products = []
+        for row_idx, row in enumerate(initial_sheet_values[HEADER_ROW:], start=HEADER_ROW + 1):
+            if len(row) >= ITEM_MASTER_LIST_COL and row[ITEM_MASTER_LIST_COL - 1].strip() and row[ITEM_MASTER_LIST_COL - 1].strip() not in SUMMARY_LABELS:
+                live_existing_products.append({"name": row[ITEM_MASTER_LIST_COL - 1].strip(), "row": row_idx})
+
+        live_existing_suppliers = {}
+        header_row_values = initial_sheet_values[COMPANY_NAME_ROW - 1] if initial_sheet_values else []
+        for col_idx in range(ITEM_MASTER_LIST_COL + 1, len(header_row_values) + 1, COLUMNS_PER_SUPPLIER):
+            supplier_name = header_row_values[col_idx - 1].strip() if (col_idx - 1) < len(header_row_values) else ""
+            if supplier_name:
+                live_existing_suppliers[supplier_name] = col_idx
         
         sorted_indices = sorted(data_by_index.keys())
         
@@ -456,7 +470,9 @@ def process_files(file_paths, sheet_id=DEFAULT_SHEET_ID):
             r = data_by_index[idx]
             if r and "data" in r and r["data"]:
                 st.write(f"🔁 Updating sheet with file {i+1}/{len(sorted_indices)}: {r['file_name']}")
-                update_google_sheet_for_single_file(ws, r["data"])
+                live_existing_products, live_existing_suppliers = update_google_sheet_for_single_file(
+                    ws, r["data"], live_existing_products, live_existing_suppliers
+                )
                 results.append(r["data"])
                 time.sleep(0.5)
             
@@ -545,6 +561,7 @@ You must return ONLY this JSON structure:
 ## Field Extraction Guidelines
 
 ### name (Product Description)
+* CRITICAL: PRESERVE PRODUCT CODES: If a line starts with a code (e.g., "D6", "W1", "W8.2", "SHR1002831P"), you MUST include this code at the beginning of the extracted 'name'. Do NOT confuse these codes with simple list numbering (like 1., 2., 3.).
 * CRITICAL: Include ALL hierarchical information in each product name:
   - Category names/headings (e.g., "งานบันไดกระจก งานพื้นตก")
   - Sub-category information (e.g., "เหล็กตัวซีชุบสังกะสี")
@@ -667,10 +684,10 @@ You must return ONLY this JSON structure:
 |------|---------|----------------|------|------|--------------|------------|
 | 1    |         | พื้นไม้ไวนิลลายไม้ปลา 4.5 มม. LKT 4.5 mm x 0.3 mm สีฟ้าเซอร์คูลี (1 กล่อง บรรจุ 18 แผ่น หรือ 1.3 ตร.ม) | ตร.ม. | 1.30 | 680.00 | 884.00 |
 
-
 ## Field Extraction Guidelines
 
 ### name (Product Description)
+* CRITICAL: PRESERVE PRODUCT CODES: If a line starts with a code (e.g., "D6", "W1", "W8.2", "SHR1002831P"), you MUST include this code at the beginning of the extracted 'name'. Do NOT confuse these codes with simple list numbering (like 1., 2., 3.).
 * CRITICAL: Include ALL hierarchical information in each product name:
   - Category names/headings (e.g., "งานบันไดกระจก งานพื้นตก")
   - Sub-category information (e.g., "เหล็กตัวซีชุบสังกะสี")
