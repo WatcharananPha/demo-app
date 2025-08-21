@@ -36,6 +36,13 @@ SUMMARY_LABELS = [
     "อื่น ๆ",
 ]
 
+SAFETY_SETTINGS = {
+    "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
+    "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
+    "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
+    "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
+}
+
 def extract_sheet_id_from_url(url):
     if not url:
         return None
@@ -190,6 +197,7 @@ def match_products_with_gemini(target_products, reference_products):
     model = genai.GenerativeModel(
         model_name="gemini-2.5-pro",
         generation_config={"temperature": 0.0, "top_p": 0.95},
+        safety_settings=SAFETY_SETTINGS
     )
     response = model.generate_content(match_prompt_formatted)
     match_text = (response.text or "").strip()
@@ -401,12 +409,12 @@ def process_file(file_path):
     file_type = get_file_type(file_path)
     prompt_to_use = image_prompt if file_type == "image" else prompt
 
-    model_flash = genai.GenerativeModel(model_name="gemini-2.5-flash", generation_config={"temperature": 0.1, "top_p": 0.95})
+    model_flash = genai.GenerativeModel(model_name="gemini-2.5-flash", generation_config={"temperature": 0.1, "top_p": 0.95}, safety_settings=SAFETY_SETTINGS)
     resp = model_flash.generate_content([prompt_to_use, uploaded_gemini_file])
     d = extract_json_from_text(getattr(resp, "text", "") or "")
 
     if not d or not d.get("products"):
-        model_pro = genai.GenerativeModel(model_name="gemini-2.5-pro", generation_config={"temperature": 0.1, "top_p": 0.95})
+        model_pro = genai.GenerativeModel(model_name="gemini-2.5-pro", generation_config={"temperature": 0.1, "top_p": 0.95}, safety_settings=SAFETY_SETTINGS)
         resp_pro = model_pro.generate_content([prompt_to_use, uploaded_gemini_file])
         d = extract_json_from_text(getattr(resp_pro, "text", "") or "")
 
