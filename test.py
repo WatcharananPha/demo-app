@@ -184,7 +184,6 @@ def extract_product_code(name):
         return match.group(1)
     return None
             
-    return None
 def match_products_with_gemini(target_products, reference_products):
     if not target_products:
         return {"matchedItems": [], "uniqueItems": []}
